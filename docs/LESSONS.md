@@ -549,3 +549,88 @@ valueSchemaSpecToJsonSchema(options.output.schema)    // defineTool L847
   的路径上（写操作、poll 检测到变化）。
 - `requestSync()` 本身也要幂等：被高频调用时，未变化的 pass 必须 ≈0 成本。
 - 新增任何"定时/轮询"行为时，先问：它会不会触发全量重建？会就拆开。
+
+---
+
+## 18. 客户端注册 id 必须是包名（2026-09-17，改 scoped 名后暴露）
+
+**症状**：包名从 `dsh-proxy-pro` 改为 `@yanglaofish/dsh-proxy-pro` 后，Web 端启动直接失败：
+
+```
+failed to import loader entry 18081979 (@yanglaofish/dsh-proxy-pro): client-modules: bundle
+/plugins/??…,@yanglaofish/dsh-proxy-pro/client.js,…&rev=… loaded without registering
+"@yanglaofish/dsh-proxy-pro" via __ModuleLoader__.load
+```
+
+**根因**：`lib/client.js` 仍在用旧名注册：`window.__ModuleLoader__.load({ id: "dsh-proxy-pro/client", … })`。
+`@deepseek-ai/dsh-client-modules/lib/client.js` 的 `register()` 存 factories 时用
+`stripClientSuffix(registration.id)`，而 `arrive()` 是按 **graph 行 id（= 包名）** 查找的
+（L230 / L248）。`dsh-proxy-pro` ≠ `@yanglaofish/dsh-proxy-pro` → 查不到 → 抛错。
+
+**规矩**：client bundle 注册 id 写**完整包名**（对照 `@yanglaofish/dsh-skill-manager` 的
+`id: "@yanglaofish/dsh-skill-manager"`；它连 `exports.name` 都没有，说明注册 id 才是匹配键）。
+包名改名时，"看起来像运行时标识、其实是匹配键"的地方必须一起切：
+
+- `cordis.patch.yml` insert 行的 `name`（= 包名，host 侧 import 用）
+- `package.json` 的 `name`（`dsh.client` 声明的宿主包名）
+- `lib/client.js` 的 `__ModuleLoader__.load({ id })`（= 包名）
+
+**保留不动的内部标识**（与包名解耦，改了反而破坏兼容）：
+`/dsh-proxy-pro/api` 路由、`ctx.emit('dsh-proxy-pro/status')` 事件名、插件 id、
+`.dsxprx` CSS 前缀、日志前缀、settings 的 `proxy` namespace。
+
+---
+
+## 19. profile 依赖只能经 dsh CLI 改（手改会被运行中的 Desktop 覆盖）
+
+运行中的 DSH Desktop 以自身内存状态为准回写 `profiles/<p>/package.json`：手动 edit 加回
+`@yanglaofish/dsh-proxy-pro` 依赖后，文件会被抹回"无此插件"——pnpm 于是看不到依赖
+（lockfile 里没有条目，`pnpm install` 直接 "Already up to date"，`--force` 也不装）。
+
+**正确做法**（2026-09-17 实测通过）：
+
+```sh
+# 快照式（pnpm 把目录内容装进 node_modules，改源码需重装）
+dsh plugin --profile web add file:C:/Users/w00958282/.dsh/plugins/dsh-proxy-pro
+
+# 实时式（junction 指向源码，改源码即时生效）——本地开发用这个
+dsh plugin --profile web add link:C:/Users/w00958282/.dsh/plugins/dsh-proxy-pro
+```
+
+CLI 会同时写 `dependencies` + `dsh.profile.bundles` 并跑 pnpm 安装；两侧都不会被覆盖。
+验证：`(Get-Item node_modules\@yanglaofish\dsh-proxy-pro).LinkType` 应为 `Junction`，
+`.Target` 指向 `~/.dsh/plugins/dsh-proxy-pro`。
+
+---
+
+## 20. 写中文文档不要走 pwsh 命令行（编码会坏）
+
+用 `pwsh` 的 here-string + `Add-Content` 向 markdown 追加中文时，命令传输过程会把非 ASCII
+字符写成乱码（实测 LESSONS.md 末尾 50 行全成 `浼氬悓鏃跺啓` 一类）。**中文内容一律用
+write / edit 工具写入**（工具通道是 UTF-8 正确的），pwsh 只做纯 ASCII 操作。
+
+同一次事故的连带发现：手写文件操作绕过了读观测策略，也容易在"截断/重写"时改变行尾
+（CRLF/LF）导致整文件 diff。恢复手段：`git checkout -- <file>` 回 HEAD 版本重来。
+
+---
+
+## 21. .git 目录只丢 HEAD/config/index 时可以就地救回
+
+现象：`git` 报 `fatal: not a git repository`，但 `.git/` 存在且含 `objects/`、`refs/`。
+（本例 `.git` 只剩这两个子目录，缺 `HEAD`/`config`/`index`。）
+
+**救回步骤**（不需要网络）：
+
+```sh
+mv .git .git.broken
+git init -b master
+cp -r .git.broken/refs/* .git/refs/
+cp -r .git.broken/objects/* .git/objects/
+git reset          # 用 HEAD 重建 index
+git log --oneline  # 历史完整（refs/heads/master 里的 tip 仍在）
+```
+
+前提：`.git.broken/refs/heads/<branch>` 仍指向有效 commit、objects 完整（松散或 pack）。
+若 refs 也没了，就只能等网络恢复后 `git fetch` 远端历史再 `git reset --mixed origin/<branch>`。
+本例 `git fetch` 失败于 `Could not resolve proxy: proxyhk.huawei.com`——git 的 `http.proxy`
+指向公司代理，离开公司网络（或代理关闭）时 GitHub 不可达；此时**不要** push/force push。
