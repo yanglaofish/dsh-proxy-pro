@@ -340,6 +340,17 @@ systemPollMs: 30000
 - [ ] A10 两 profile 均通过 A1-A9
 - [ ] A11 拖拽 → 明确降级为胶囊按钮（无拖拽，符合 spec 决定）
 
+**观察通道约定**（2026-09-17 补充，重启后逐项按通道确认）：
+- **GUI**：设置页「代理管理」（A1/A8）、对话头部胶囊（A2/A11）——唯一需要
+  人工肉眼确认的通道；本地 HTTP 探测会被 app 安全门 403，浏览器内不影响。
+- **会话内工具**：`proxy_status` / `proxy_set` / `proxy_test`（A3/A5/A6/A7）。
+- **实测网页请求**：web_fetch 被墙域（A4/A7 的 200/失败行为）。
+- **进程事实**：Get-Process 启动时间 / env（A9 卸载后恢复）。
+
+_运行时快照（2026-09-17 重启后）：host 半 API 路由已在响应
+（`/dsh-proxy-pro/api/status` 返回 fence 拒绝文本 `forbidden`，非 404），
+进程表 12:14 新实例确认重启已发生；待 GUI 确认 A1/A2。_
+
 ---
 
 ## 8. 已知风险与开放问题
@@ -360,5 +371,7 @@ systemPollMs: 30000
 2. ✅ `lib/index.js`（host：settings → sync（单一通道）→ 工具 → fence API → poll → teardown）
 3. ✅ `lib/client.js`（设置页 → 头部按钮 → 轮询/诊断）
 4. ✅ `cordis.patch.yml` / `package.json`（发布形态）+ git init（commit 04eb709）
-5. ⏳ 装 web profile → 重启 → 验收 A1-A9（§6.2 步骤）
-6. ⏳ obsidian-web profile → 验收 A10；发布 npm 收尾
+5. ✅ 已装入两 profile + `--dump-config` 预检通过（两个组合树都含 dsh-proxy-pro 行）；
+   ✅ 2026-09-17 已重启（DSH Desktop 12:14 新实例），host API 路由已响应
+6. ⏳ GUI 确认 A1/A2（头部胶囊 + 设置页「代理管理」）→ 运行时验收 A3-A9
+   → obsidian-web A10 → 发布收尾
