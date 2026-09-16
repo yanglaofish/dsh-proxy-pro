@@ -418,3 +418,97 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
    LastWriteTime——两者撞窗 = recovery 重写过。
 3. `dsh --profile web --dump-config` 复检行在树里。
 4. 修好 → 重启 → 按 ACCEPTANCE.md 验收。
+
+---
+
+## 15. dsh-tools 工具 schema DSL 完整词表 + 本地编译验证（2026-09-16）
+
+### 15.1 事故：schema 类错误烧掉三次重启
+
+三次 boot 失败，同一个根因家族，全都是 `defineTool` 在 apply 期抛
+`JsonSchemaError` → 整个 plugin tree 加载失败：
+
+| 报错 | 违规写法 | 正确写法 |
+|---|---|---|
+| `.additionalProperties must be explicitly true or false` | object 省略该键 | 每个 `type:'object'` 显式 `additionalProperties: false` |
+| `.required must be true when present` | `{ type:'number', required: false }` | 可选属性**省略 `required`**，不能写 `false` |
+
+### 15.2 DSL 词表（编译器逐字确认，dsh-tools lib/schema）
+
+每个节点允许的键 = 通用注解 `description/title/default/examples`
++（仅**属性节点**且仅当 `required === true` 时）`required`
++ 按类型：
+
+| 类型 | 额外允许键 | 硬性要求 |
+|---|---|---|
+| `object` | `properties`, `additionalProperties` | `additionalProperties` 必须是显式 boolean |
+| `array` | `items` | — |
+| `string`/`number`/`integer`/`boolean`/`null` | `enum`, `const` | — |
+| `json` | （仅注解） | — |
+| 替代式 `oneOf` | `oneOf`（≥2 分支） | 不可与 `type` 同时出现 |
+
+- **任何 DSL 之外的键都是错误**（`format`/`pattern`/`minimum` 等一律不支持）。
+- `required` 是**属性级标记**而非属性名数组；对象根的 required 列表由编译器收集。
+
+### 15.3 解法：把 apply 期错误提前到本地（不重启）
+
+`dsh-tools` **导出**了 `defineTool` 内部使用的两个编译器：
+
+```js
+parameterSchemaSpecToJsonSchema(options.parameters)   // defineTool L846
+valueSchemaSpecToJsonSchema(options.output.schema)    // defineTool L847
+```
+
+因此工具 schema 抽到 `lib/tool-schemas.js`（纯数据、零依赖），
+`test/tool-schema.test.mjs` 做两层校验：
+
+1. **静态镜像**：完整复刻上面的词表（含 `required` 只许 true、object 必须
+   显式 additionalProperties、未知键报错），无 app 也能跑；
+2. **真实编译器**：定位 `@deepseek-ai/dsh-tools` 并调用那两个导出——
+   路径来源依次为 `DSH_TOOLS_MODULE` → `DSH_APP_ROOT` →
+   `%LOCALAPPDATA%\Programs\DSH Desktop\resources\app`；找不到则 skip
+   并打 diagnostic（可移植，不硬编码机器路径）。
+
+### 15.4 规矩
+
+- **改任何 tool schema（含新增工具）后，必须先跑 `npm test`**——
+  `test/tool-schema.test.mjs` 必须绿，否则不要重启 DSH。
+- `--dump-config` 检测不到这类错误（它只 compose 行，不执行插件 apply），
+  别用它当"能启动"的证据。
+
+---
+
+## 16. Client 半的槽位规矩（2026-09-16 静态核对发现）
+
+### 16.1 inject 的槽名必须等于 register 的槽名
+
+- 错误写法（本插件原样，已修）：`slots.inject("conversation.session.header", …)`
+  里 `register({ name: "conversation.session.header.utilities" })` ——
+  **注入父槽、注册子槽**，注册不会生效。
+- 正确写法（app 官方先例逐字）：
+  `dsh-client-ui-open-in-app/lib/client.js:406`、
+  `dsh-session-log-export/lib/client.js:274` 都是
+  `ctx.slots.inject("conversation.session.header.utilities", () => ctx.slots.register({
+      name: "conversation.session.header.utilities", … }))`。
+- 结论：**inject 的键就是 register 的 name**，子槽也要写全名。
+
+### 16.2 可用槽位的事实来源（别再猜）
+
+- `conversation.session.header` 家族由 `@deepseek-ai/dsh-client-ui-conversation`
+  定义（client.js L16684-16699：`.lineage` / `.actions` / `.utilities` / `.corner`），
+  渲染点在 L14951 / L15072-15082。
+- `settings.section` 由 `dsh-client-ui-settings-general`、`settings-models`、
+  `settings-plugins`、`ui-agent-preset` 等注册；`dsh-cordis-client-runner`
+  L3872 持有槽树 `key: "settings.section"`。
+- 核对方法：grep `@deepseek-ai/*/lib/client.js` 找 `renderSlot("槽名"` 与
+  `register({ name: "槽名"` 的**实际先例**，照抄其形式（含 `slots.inject` 写法）。
+- 对比：dsh-plugin-proxy 挂在 `sidebar.footer.action` + `settings.plugin.item`；
+  本插件按 FR-2 选对话头部工具区（`…header.utilities`），与 open-in-app 同款。
+
+### 16.3 两处 inject 不要混
+
+- `package.json` 的 `dsh.client.inject` = **client 包名列表**（加载顺序）。
+- `client.js` 导出的 `exports.inject` = **Cordis 服务名**（`slots`、`settingsScope`）。
+- 把包名写进 `exports.inject` 会永久 pending 并阻塞 web boot（§6）。
+- 本插件 client 模块 id 遵循 `<包名>/client`（`"dsh-proxy-pro/client"`），
+  与 `"dsh-plugin-proxy/client"` 同规。
