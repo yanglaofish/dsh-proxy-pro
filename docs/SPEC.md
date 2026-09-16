@@ -1,7 +1,7 @@
 # dsh-proxy-pro 设计规格（DESIGN SPEC）
 
-> 版本：0.1（2026-09-16）
-> 状态：规格定稿，移交开发
+> 版本：0.1（2026-09-16，2026-09-17 修订部署形态为发布/软件包制）
+> 状态：v0.1 代码完成（2026-09-17），待安装验收 A1-A10
 > 读者：接手开发的模式（拥有更高权限与技能）。请把本文与 `docs/LESSONS.md`
 > 一起读：LESSONS 记录**已验证的事实与踩坑教训**（不可违背），本文记录
 > **要做什么、怎么验收**。两者冲突时以 LESSONS.md 为准。
@@ -70,27 +70,35 @@
 
 ## 3. 总体架构
 
-### 3.1 部署形态
+### 3.1 部署形态（2026-09-17 修订：file:// 方案作废，改为发布形态）
+
+插件以标准 npm 插件包发布，经 `dsh plugin --profile <name> add dsh-proxy-pro`
+装入各 profile（= 写 dependencies + 追加 `dsh.profile.bundles` + pnpm 安装）。
+启动时 dsh-app-boot 依次读每个 bundle 包的 `dsh.bundle.patch`（cordis.patch.yml）
+把插件行 insert 进入口树。参照 dsh-skill-manager（已发布 4.3.3，机制见
+LESSONS §12）。
 
 ```
-~/.dsh/plugins/dsh-proxy-pro/
-  package.json       # name / exports["./client"] / dsh.client(platform:web)
-  cordis.patch.yml   # 供 dsh.bundle.patch 引用（如需）
+开发源（~/.dsh/plugins/dsh-proxy-pro/，git 仓库）：
+  package.json       # name/exports["/client","/cordis.patch.yml"]/dsh.client(platform:web)
+  cordis.patch.yml   # bundle patch：insert 一行 name: 'dsh-proxy-pro'（dsh.bundle.patch 指向）
   lib/
     index.js         # host 半（Cordis 插件）
     client.js        # 浏览器半（__ModuleLoader__.load）
     proxy-core.js    # 纯逻辑（系统代理读取/NO_PROXY/状态解析/probe 分类）
-  docs/
-    LESSONS.md       # 踩坑备忘（已完成）
-    SPEC.md          # 本文档
+  test/proxy-core.test.mjs   # node --test 单测（16 例）
+  docs/ README.md LICENSE
+
+profile 内安装（pnpm nodeLinker: hoisted；本地=file: 软链，发布=registry 包）：
+"dependencies": { "dsh-proxy-pro": "file:../../plugins/dsh-proxy-pro" }
+"dsh": { "profile": { "bundles": [ "...", "dsh-proxy-pro" ] } }
 ```
 
-- **host 加载**：profile 的 `cordis.patch.yml` 以 `file:///.../lib/index.js` 形式 insert。
-- **client 发现**：`dsh-client-modules` 的 `locatePkgJson` 支持 `file:` pathLike，
-  向上找 package.json；package.json 声明 `dsh.client.platform: "web"` +
-  `exports["./client"]` 即被发现（LESSONS §5 已验证源码）。
-- **两个 profile**：web、obsidian-web 各自 cordis.patch.yml 增补同一 file:// 路径
-  （绝对路径指向同一份插件，改一处两处生效，避免硬链接副本问题）。
+- **host 加载**：bundle patch 以 `name: 'dsh-proxy-pro'`（包名）insert → profile
+  resolver 从 profile node_modules（没有则兜底 app 安装副本）解析，无需 file://。
+- **client 发现**：client-modules 按已装包的 `dsh.client.platform: web` +
+  `exports["./client"]` 扫描打包（skill-manager 同款）。
+- **两个 profile 共用一份源码**：file: 软链指向同一目录，改一处两处生效。
 
 ### 3.2 运行时交互图
 
@@ -124,38 +132,46 @@
 
 ```js
 const name = 'dsh-proxy-pro'
-const inject = ['tools', 'systemPrompt', 'settings', 'webServer']
+const inject = ['tools', 'systemPrompt', 'settings']   // webServer 改可选（ctx.get）
 function apply(ctx, config) { … }   // 导出 { Config, apply, inject, name }
 ```
 
-- 载入时捕获 `savedEnv`（PROXY_ENV 八个名字 + 默认 dispatcher）。
+- **没有 savedEnv / EnvHttpProxyAgent / 手写 dispatcher**：传输完全委托
+  `installProxyFromEnvironment`（env + 全局 dispatcher + 模块级策略一体，
+  LESSONS §12.4：单一通道，杜绝 undici 错版）。
 - `installSettingsSection(ctx, PROXY_NS, Config, config, { setSource, onChange })`，
   onChange → `requestSync()`（合并去重，`syncing` 单飞）。
-- teardown（`ctx.effect`）：清 pollTimer → applyEffective(off) → `await policy?.()`。
+- teardown（`ctx.effect`）：清 pollTimer → `await httpProxyPolicy?.()`（卸载=恢复
+  env/dispatcher/策略）。
 
 ### 4.2 sync() 主流程（顺序不可乱）
 
 ```
+0. haveApplied 守卫：从未启用过且当前不 active → 只记快照，不碰传输层
+   （与旧 dsh-plugin-proxy 并存启动时互不抢 dispatcher，NFR-4）
 1. resolved = source()
 2. if mode=system && enabled: systemProxy = await systemProxyReader()（reg.exe）
 3. effective = resolveProxyState(resolved, systemProxy)
-4. dispatcher = applyEffective(effective, savedEnv, dispatcher)   // env + 全局 dispatcher
-5. ★ 关键修复：
-   if effective.active: await httpProxyPolicy?.(); httpProxyPolicy = await installProxyFromEnvironment(envLike, log)
-   else: await httpProxyPolicy?.(); httpProxyPolicy = undefined
+4. active 判定：active 时 haveApplied = true
+5. ★ 唯一传输通道：await httpProxyPolicy?.()（先卸载旧 policy）
+   → httpProxyPolicy = await installProxyFromEnvironment(makeEnvLike(effective), log)
 6. snapshot = { ... }; ctx.emit('dsh-proxy-pro/status', summarize(snapshot))
 ```
 
-`envLike = { get: (name) => { const v = process.env[name]; return v === undefined ? undefined : { value: v } } }`
-——必须带 `.get()`，且**重新 install 前先 await 旧 policy**（LESSONS §4）。
+`makeEnvLike(effective)`：active 时输出 8 个名字（HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/
+NO_PROXY 大小写双写）的 `{ value }` 快照，inactive 时全空；必须带 `.get()`，
+且**重新 install 前先 await 旧 policy**（LESSONS §4）。OFF 分支由
+installProxyFromEnvironment 的 none-branch 完成：恢复首次安装前的 env + 装直连 Agent。
 
-### 4.3 applyEffective（env + 全局 dispatcher）
+### 4.3 为什么没有 applyEffective（2026-09-17 重构）
 
-- active：写 HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY（大小写双写），
-  新建 `EnvHttpProxyAgent` → `setGlobalDispatcher` → close 旧的。
-- inactive：恢复 savedEnv（含默认 dispatcher），close 旧的。
-- 原样复用 dsh-plugin-proxy 中已验证的这段逻辑（LESSONS §3 表格"修改全局
-  dispatcher 就够"只是不覆盖 web_fetch，不是说这段不能要）。
+- 旧设计先 `applyEffective`（EnvHttpProxyAgent + 手写 env + savedEnv），随后
+  `installProxyFromEnvironment` 又覆盖 dispatcher：后者永远最后赢，前者白建白关，
+  还引入两个 undici 实例（profile 7.29.0 vs app 8.10.0）的错版风险（LESSONS §3）。
+- dsh-http-proxy 的 `applyPolicyEnv` 本来就写 env（含 ALL_PROXY 兜底 + loopback
+  合并），`installGlobalProxy` 装 per-origin Agent dispatcher——三件事一次调用完成。
+- 结论：**删除 undici 依赖 + EnvHttpProxyAgent + savedEnv + applyEffective**，
+  插件对 undici 零依赖，UND_ERR_INVALID_ARG 这类问题在源头上不存在。
 
 ### 4.4 系统代理跟随
 
@@ -292,16 +308,20 @@ systemPollMs: 30000
 - schema（schemastery）：enabled bool / mode union / customUrl string /
   noProxy string / systemPollMs number min 0。
 
-### 6.2 过渡步骤（NFR-3）
+### 6.2 过渡步骤（NFR-3，2026-09-17 改为 bundle 形态）
 
-1. 插件写好后，先在**一个** profile（web）的 cordis.patch.yml insert
-   `dsh-proxy-pro` 行，**同时**把原 `dsh-plugin-proxy` 行改为 `disabled: true`
-   （或注释删除），**不要动 settings.yaml 任何内容**。
-2. 重启 DSH → `proxy_status` 确认 active=true、url=proxyhk → 手动 web_fetch
+1. 本地装入 web profile：
+   `dsh plugin --profile web add file:../../plugins/dsh-proxy-pro`
+   （发布后即 `add dsh-proxy-pro`；等价包级操作见 §3.1）。
+2. profile 的 cordis.patch.yml **同时**把原 `dsh-plugin-proxy` 行改为
+   `- id: proxy, disabled: true`（bundle 层 insert 的行可按 id patch），
+   **不要动 settings.yaml 任何内容**。
+3. 重启 DSH → `proxy_status` 确认 active=true、url=proxyhk → 手动 web_fetch
    一个被墙 URL（如 github）确认 200。
-3. 验证 proxy_test github=PROXIED / deepseek=DIRECT。
-4. 再对 obsidian-web profile 做同样操作，重复验证。
-5. 回滚 = 恢复原插件行 enabled（settings.yaml 没动过，天然安全）。
+4. 验证 proxy_test github=PROXIED / deepseek=DIRECT。
+5. 再对 obsidian-web profile 做同样操作，重复验证。
+6. 回滚 = 恢复原插件行 enabled（settings.yaml 没动过，天然安全），或
+   `dsh plugin --profile web remove dsh-proxy-pro`。
 
 ---
 
@@ -334,15 +354,11 @@ systemPollMs: 30000
 
 ---
 
-## 9. 开发顺序建议（给接手的模式）
+## 9. 开发状态（2026-09-17 更新：v0.1 代码完成并提交）
 
-1. `lib/proxy-core.js`（纯逻辑，可先用 node --test 单测 parse/resolve/compose）
-2. `lib/index.js`（host：settings → sync → 工具 → API → poll → teardown）
-3. `lib/client.js`（骨架 → 设置页 → 头部按钮 → 轮询）
-4. `package.json` / `cordis.patch.yml` → web profile 安装 → **验收 A1-A9**
-5. obsidian-web profile 安装 → 验收 A10
-6. README.md（安装/使用/回滚三节）→ 收尾
-
-> 已有草稿（本轮已生成，供参考/可调整）：package.json、lib/proxy-core.js、
-> lib/index.js、docs/LESSONS.md。它们遵循本 spec 与 LESSONS 的全部约束，
-> 接手后建议先过一遍再决定改写还是直接用。
+1. ✅ `lib/proxy-core.js`（16 例单测全过）
+2. ✅ `lib/index.js`（host：settings → sync（单一通道）→ 工具 → fence API → poll → teardown）
+3. ✅ `lib/client.js`（设置页 → 头部按钮 → 轮询/诊断）
+4. ✅ `cordis.patch.yml` / `package.json`（发布形态）+ git init（commit 04eb709）
+5. ⏳ 装 web profile → 重启 → 验收 A1-A9（§6.2 步骤）
+6. ⏳ obsidian-web profile → 验收 A10；发布 npm 收尾

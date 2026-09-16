@@ -115,11 +115,17 @@ C:\Users\...\profiles\[web|obsidian-web]\node_modules\dsh-plugin-proxy\package.j
   我们的补丁全丢（这也是用户抱怨"修改别扭"的根源）。
 - 原 `dsh-plugin-proxy` 版本升级同样会覆盖我们的补丁（我们保留了 `.bak` 也是无奈之举）。
 
-**决策：`dsh-proxy-pro` 独立部署在 `~/.dsh/plugins/dsh-proxy-pro/`，通过
-`cordis.patch.yml` 以 file:// 形式加载，完全不进 node_modules。**
+> **⚠️ 2026-09-17 已修订：下面的 file:// 部署决策作废。**用户明确要求
+> 「不要 file:// host 插件，要能安装发布的插件」→ 改为标准 npm 插件包 +
+> `dsh plugin --profile add` 部署，机制见本文档 §12。本节保留为历史证据
+> （node_modules 硬链接被洗的动机仍然成立，但解法是"自有包 + file: 软链装
+> 入 profile"，而不是 file:// 加载）。
+
+**原决策（已作废）：`dsh-proxy-pro` 独立部署在 `~/.dsh/plugins/dsh-proxy-pro/`，
+通过 `cordis.patch.yml` 以 file:// 形式加载，完全不进 node_modules。**
 
 ```yaml
-# profiles/<profile>/cordis.patch.yml 增补
+# profiles/<profile>/cordis.patch.yml 增补（已作废）
 - insert:
     - id: dsh-proxy-pro
       name: file:///C:/Users/w00958282/.dsh/plugins/dsh-proxy-pro/lib/index.js?raw  # 见 loader 约定
@@ -276,5 +282,55 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
    dsh-client-ui-conversation / dsh-client-ui-chat / dsh-client-modules / dsh-settings）
 - 原插件（已打补丁 + .bak）：`~/.dsh/profiles\{web,obsidian-web}\node_modules\dsh-plugin-proxy\lib\`
 - 参照模板：`~/.dsh/profiles\obsidian-web\node_modules\dsh-skill-manager\lib\`（index.js + client.js）
-- 本插件：`~/.dsh/plugins/dsh-proxy-pro/`
+- 本插件：`~/.dsh/plugins/dsh-proxy-pro/`（git 仓库，发布形态，见 §12）
 - 环境事实：`~/.dsh/.env`（已删，纯冗余证据）；`settings.yaml`、`cordis.patch.yml`、`cordis.yml`
+
+---
+
+## 12. 发布形态（2026-09-17 修订，取代 §5 的 file:// 方案）
+
+**决策：dsh-proxy-pro 是标准 npm 插件包**，参照已发布的 `dsh-skill-manager@4.3.3`
+（GitHub yanglaofish/dsh-skill-manager）。`~/.dsh/plugins/dsh-proxy-pro/` 是它的
+开发源目录（git init，commit 04eb709），发布后从 npm / GitHub 安装。
+
+### 12.1 机制（全部经本机源码验证）
+
+- profile 的 `package.json`：
+  - `dependencies` 装插件：发布版 = registry 包；本地开发 =
+    `file:../../plugins/dsh-proxy-pro`（pnpm 软链，改源码免重装、两 profile 共用一份）。
+  - `dsh.profile.bundles` 追加包名 → dsh-app-boot `loadProfileDirectory`
+    （app lib/index.js L866-877）逐个读每个 bundle 包的 `dsh.bundle.patch`：
+    **声明了 dsh.bundle 但 patch 文件缺失 = 整个 profile boot 抛错**（不是跳过）。
+- 插件包自己的 `cordis.patch.yml`（dsh.bundle.patch 指向）insert 一行
+  `- id: dsh-proxy-pro, name: 'dsh-proxy-pro', config: {enabled:false, mode:system, ...}`，
+  格式照抄 dsh-plugin-proxy 自己的 patch。
+- host 解析：一行 `name: 'dsh-proxy-pro'`（包名）→ include import 走 profile
+  resolver（app lib/module-resolution-*.js 的 registerHooks）：
+  - profile 边界/图内模块的裸包名先按 profile node_modules 解析，
+    没有则兜底 app 安装副本（`@deepseek-ai/*` 全在 app；profile 里实际只有
+    cosmokit/dsh-storage-domain/schemastery——已实测）。
+  - 因此 peerDependencies 声明版本即可，**profile 无需安装 `@deepseek-ai/*`**。
+- client 发现同 skill-manager：package.json `dsh.client.platform: "web"` +
+  `exports["./client"]`；exports 应含 `"./cordis.patch.yml"`。
+- 安装命令：`dsh plugin --profile web add <包或 file: 或 github:>`；卸载
+  `dsh plugin --profile web remove dsh-proxy-pro`。
+
+### 12.2 传输架构（host 重构后，v0.1 落地）
+
+- **删掉 undici 依赖 / EnvHttpProxyAgent / savedEnv / applyEffective**——
+  插件对 undici 零依赖，错版雷区（§3：7.29.0 vs 8.10.0）在源头上不存在。
+- 唯一通道：`installProxyFromEnvironment(makeEnvLike(effective), log)` 一次完成
+  env（applyPolicyEnv 写 8 个名字大小写双写 + loopback 合并）+ per-origin
+  dispatcher + 模块级策略（proxyRouteFor 读它 → web_fetch 通道，§2 图）。
+- OFF 分支：none-branch 恢复首次安装前的 env + 装直连 Agent（A9 干净卸载即此）。
+- **haveApplied 守卫**：从未启用过且当前 OFF → 只记快照不碰传输层；默认
+  enabled:false 启动时与旧 dsh-plugin-proxy 并存互不抢 dispatcher（NFR-4）。
+- 动机：旧设计先 applyEffective 再 installProxyFromEnvironment，后者永远最后赢，
+  EnvHttpProxyAgent 白建白关；且窗口期两个 undici 实例的 dispatcher 互操作正是
+  §3 UND_ERR_INVALID_ARG 的触发面。
+
+### 12.3 过渡（NFR-3）
+
+新行默认 `enabled: false` 共存启动 → 验证通过后再接管：profile cordis.patch.yml
+加 `- id: proxy, disabled: true`（bundle 层 insert 的行可按 id patch）→ 重启。
+回滚 = 删该行或 `dsh plugin remove`；settings.yaml 全程不动。
