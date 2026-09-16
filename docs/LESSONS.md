@@ -512,3 +512,40 @@ valueSchemaSpecToJsonSchema(options.output.schema)    // defineTool L847
 - 把包名写进 `exports.inject` 会永久 pending 并阻塞 web boot（§6）。
 - 本插件 client 模块 id 遵循 `<包名>/client`（`"dsh-proxy-pro/client"`），
   与 `"dsh-plugin-proxy/client"` 同规。
+
+---
+
+## 17. 轮询≠重组：GET 状态绝不能触发全量重装（2026-09-17 桌面卡顿根因）
+
+### 17.1 现象
+
+- 用户报告：挂上 dsh-proxy-pro 后 desktop 很卡，"切换模型都卡"。
+- 直觉困惑："插件只是流量走代理转发，怎么会卡 UI？"——**转发本身不卡，
+  卡的是把读状态变成了每几秒拆装一次代理通道**。
+
+### 17.2 根因链（三层叠加）
+
+1. client 两个 `useRuntimeStatus(4000/3000)` 轮询 `/api/status`；
+2. host 的 `/api/status` handler 上来就 `await requestSync()`；
+3. `sync()` 无条件执行：**读注册表（execFile 子进程）→ 卸载旧 policy →
+   `installProxyFromEnvironment` 重装全局 dispatcher + 重置 env**。
+
+结果：GUI 打开时 ≈ 每 3-4 秒一次全量重建全局代理（undici agent 池反复
+弃建、在途连接被拆、utility process 高频 spawn reg 子进程）。所有走代理的
+请求（含模型/页面）都在被反复打断，desktop 自然拖垮。
+
+### 17.3 修复（commit 096e431，两层）
+
+1. **API 只读快照**：`/api/status`、`/api/route` 不再 `requestSync()`——
+   直接返回内存里的 `summarize(snapshot)`。快照由配置钩子 + systemPollMs
+   轮询维持新鲜，读请求零成本。（`/api/toggle` 是写操作，保留 requestSync。）
+2. **sync 幂等化**：sync 开头计算 `effKey = JSON.stringify([active, url, noProxy, reason])`，
+   **生效状态未变 → 只刷新快照 + emit，绝不触碰 env/dispatcher**；只有
+   effKey 变化（配置变更 / 系统代理事实变化）才真正重装。
+
+### 17.4 此后铁律
+
+- **读型 API / 读型轮询永远不触发重装**；重装只发生在"生效状态真正变化"
+  的路径上（写操作、poll 检测到变化）。
+- `requestSync()` 本身也要幂等：被高频调用时，未变化的 pass 必须 ≈0 成本。
+- 新增任何"定时/轮询"行为时，先问：它会不会触发全量重建？会就拆开。
