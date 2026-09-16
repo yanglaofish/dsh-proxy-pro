@@ -98,7 +98,7 @@ test('structural: proxy_config parameters are all optional and use a mode enum',
   for (const [key, value] of Object.entries(PROXY_CONFIG_PARAMETERS)) {
     assert.ok(!Object.hasOwn(value, 'required'), `parameters.${key} must stay optional (omit required)`)
   }
-  assert.deepEqual(PROXY_CONFIG_PARAMETERS.mode.enum, ['system', 'custom', 'none'])
+  assert.deepEqual(PROXY_CONFIG_PARAMETERS.mode.enum, ['system', 'custom'])
 })
 
 /** Locate the real dsh-tools module in a DSH installation. */
