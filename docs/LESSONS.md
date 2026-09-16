@@ -334,3 +334,45 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
 新行默认 `enabled: false` 共存启动 → 验证通过后再接管：profile cordis.patch.yml
 加 `- id: proxy, disabled: true`（bundle 层 insert 的行可按 id patch）→ 重启。
 回滚 = 删该行或 `dsh plugin remove`；settings.yaml 全程不动。
+
+---
+
+## 13. 自查记录（2026-09-17，code-review-skill 一轮）
+
+### 13.1 dsh-tools schema 编译器铁律（**会让整树 boot 失败**）
+
+- 每个 `type: 'object'` 必须显式 `additionalProperties: true|false`，否则
+  `defineTool` 抛 `JsonSchemaError: ... additionalProperties must be explicitly
+  true or false` → 该行 apply 抛错 → plugin tree 加载失败、GUI 起不来。
+- 只信赖 schema 的**静态审计**不够：这次错误只在**运行期 apply** 暴露，
+  `--dump-config` 预检测不到（它只 compose 行，不执行插件）。
+- 教训：改工具 schema 后，用「遍历全部 object 断言 additionalProperties
+  存在」的静态脚本或直接引用编译器，而不是靠肉眼。
+
+### 13.2 settings.yaml 共享命名空间的实测事实
+
+- 本机 `~/.dsh/settings.yaml` `proxy:` = `{enabled: true, mode: system}`——
+  与旧 dsh-plugin-proxy 共用同一 namespace。
+- 后果：**重启后本插件会立即接管**（行序在后 = install 最后落地），
+  不是展示层默认的 OFF。这是预期行为，验收按 ON 流程走即可。
+- 双插件共存期：任何 UI 改设置都会触发两边 sync，但两边读同一份配置、
+  计算结果一致，且我们是最后写入者 → 终态一致；旧行是天然兜底
+  （本插件 apply 失败时代理仍由旧插件管理）。
+
+### 13.3 已修的三类问题（commit 5918310）
+
+1. **teardown 与在途 sync 竞态**：卸载若赶在 sync 完成前执行，晚到的
+   `installProxyFromEnvironment` 会把 policy 泄漏到卸载之后 → 卸载链到
+   `syncing.finally` 之后。
+2. **probeTarget 无效 URL 抛 throw**：`new URL('not a url')` 已捕获 →
+   结构化 `{route:'invalid', probe:{ok:false, kind:'invalid', ...}}`，
+   工具与 /api/route 都友好显示而非 500。
+3. **`void requestSync()` 未捕获拒绝**：Node 15+ 未捕获的 promise 拒绝会
+   崩主进程 → setSource/onChange/poll 三处调用点都补 `.catch(() => {})`。
+
+### 13.4 遗留 backlog（非阻塞，已文档化）
+
+- index.js 业务逻辑（sync/guard/teardown/API/fence）无单测——依赖运行时验收；
+  补测需 mock dsh-http-proxy/dsh-settings，成本中等，留待发布后。
+- client 轮询无 no-op 去重、无超时、慢响应可能乱序显示旧状态——组件极小，
+  现实风险低，暂不改。
