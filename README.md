@@ -20,8 +20,8 @@
 **方式 A：npm 安装（推荐）**
 
 ```sh
-dsh plugin --profile web add dsh-proxy-pro
-dsh plugin --profile obsidian-web add dsh-proxy-pro
+dsh plugin --profile web add @yanglaofish/dsh-proxy-pro
+dsh plugin --profile obsidian-web add @yanglaofish/dsh-proxy-pro
 ```
 
 **方式 B：GitHub 源安装**
@@ -69,8 +69,8 @@ proxy:
 ## 卸载
 
 ```sh
-dsh plugin --profile web remove dsh-proxy-pro
-dsh plugin --profile obsidian-web remove dsh-proxy-pro
+dsh plugin --profile web remove @yanglaofish/dsh-proxy-pro
+dsh plugin --profile obsidian-web remove @yanglaofish/dsh-proxy-pro
 ```
 
 卸载即恢复原始路由行为，不留残留。
@@ -144,8 +144,8 @@ npm test
 ```
 
 - 纯逻辑层 `lib/proxy-core.js` 零 DSH 依赖，可独立单测。
-- **GitHub 安装模式**：改代码需 `git push` 后 `pnpm update dsh-proxy-pro` 再重启 `dsh web` 生效。
-- **npm 安装模式**：bump 版本 → `npm publish` 后，profile 内 `pnpm add dsh-proxy-pro@最新版` 再重启 `dsh web` 生效。
+- **GitHub 安装模式**：改代码需 `git push` 后 `pnpm update @yanglaofish/dsh-proxy-pro` 再重启 `dsh web` 生效。
+- **npm 安装模式**：bump 版本 → `npm publish --registry=https://registry.npmjs.org` 后，profile 内 `pnpm add @yanglaofish/dsh-proxy-pro@最新版` 再重启 `dsh web` 生效。
 - **本地开发模式**（改代码重启即生效）：`dsh plugin --profile web add file:../../plugins/dsh-proxy-pro`。
 
 ## 许可

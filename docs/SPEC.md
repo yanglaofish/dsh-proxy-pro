@@ -73,7 +73,7 @@
 
 ### 3.1 部署形态（2026-09-17 修订：file:// 方案作废，改为发布形态）
 
-插件以标准 npm 插件包发布，经 `dsh plugin --profile <name> add dsh-proxy-pro`
+插件以标准 npm 插件包发布，经 `dsh plugin --profile <name> add @yanglaofish/dsh-proxy-pro`
 装入各 profile（= 写 dependencies + 追加 `dsh.profile.bundles` + pnpm 安装）。
 启动时 dsh-app-boot 依次读每个 bundle 包的 `dsh.bundle.patch`（cordis.patch.yml）
 把插件行 insert 进入口树。参照 dsh-skill-manager（已发布 4.3.3，机制见
@@ -82,20 +82,20 @@ LESSONS §12）。
 ```
 开发源（~/.dsh/plugins/dsh-proxy-pro/，git 仓库）：
   package.json       # name/exports["/client","/cordis.patch.yml"]/dsh.client(platform:web)
-  cordis.patch.yml   # bundle patch：insert 一行 name: 'dsh-proxy-pro'（dsh.bundle.patch 指向）
+  cordis.patch.yml   # bundle patch：insert 一行 name: '@yanglaofish/dsh-proxy-pro'（dsh.bundle.patch 指向）
   lib/
     index.js         # host 半（Cordis 插件）
     client.js        # 浏览器半（__ModuleLoader__.load）
     proxy-core.js    # 纯逻辑（系统代理读取/NO_PROXY/状态解析/probe 分类）
-  test/proxy-core.test.mjs   # node --test 单测（16 例）
+  test/proxy-core.test.mjs + tool-schema.test.mjs   # node --test 单测（26 例）
   docs/ README.md LICENSE
 
 profile 内安装（pnpm nodeLinker: hoisted；本地=file: 软链，发布=registry 包）：
-"dependencies": { "dsh-proxy-pro": "file:../../plugins/dsh-proxy-pro" }
-"dsh": { "profile": { "bundles": [ "...", "dsh-proxy-pro" ] } }
+"dependencies": { "@yanglaofish/dsh-proxy-pro": "file:../../plugins/dsh-proxy-pro" }
+"dsh": { "profile": { "bundles": [ "...", "@yanglaofish/dsh-proxy-pro" ] } }
 ```
 
-- **host 加载**：bundle patch 以 `name: 'dsh-proxy-pro'`（包名）insert → profile
+- **host 加载**：bundle patch 以 `name: '@yanglaofish/dsh-proxy-pro'`（包名）insert → profile
   resolver 从 profile node_modules（没有则兜底 app 安装副本）解析，无需 file://。
 - **client 发现**：client-modules 按已装包的 `dsh.client.platform: web` +
   `exports["./client"]` 扫描打包（skill-manager 同款）。
@@ -314,7 +314,7 @@ systemPollMs: 30000
 
 1. 本地装入 web profile：
    `dsh plugin --profile web add file:../../plugins/dsh-proxy-pro`
-   （发布后即 `add dsh-proxy-pro`；等价包级操作见 §3.1）。
+   （发布后即 `add @yanglaofish/dsh-proxy-pro`；等价包级操作见 §3.1）。
 2. profile 的 cordis.patch.yml **同时**把原 `dsh-plugin-proxy` 行改为
    `- id: proxy, disabled: true`（bundle 层 insert 的行可按 id patch），
    **不要动 settings.yaml 任何内容**。
@@ -323,7 +323,7 @@ systemPollMs: 30000
 4. 验证 proxy_test github=PROXIED / deepseek=DIRECT。
 5. 再对 obsidian-web profile 做同样操作，重复验证。
 6. 回滚 = 恢复原插件行 enabled（settings.yaml 没动过，天然安全），或
-   `dsh plugin --profile web remove dsh-proxy-pro`。
+   `dsh plugin --profile web remove @yanglaofish/dsh-proxy-pro`。
 
 ---
 

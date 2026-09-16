@@ -5,7 +5,7 @@
 # settings UI (Settings → 代理管理), which then takes effect immediately.
 - insert:
     - id: dsh-proxy-pro
-      name: 'dsh-proxy-pro'
+      name: '@yanglaofish/dsh-proxy-pro'
       config:
         enabled: false
         mode: system

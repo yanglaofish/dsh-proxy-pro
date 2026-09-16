@@ -302,9 +302,9 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
     （app lib/index.js L866-877）逐个读每个 bundle 包的 `dsh.bundle.patch`：
     **声明了 dsh.bundle 但 patch 文件缺失 = 整个 profile boot 抛错**（不是跳过）。
 - 插件包自己的 `cordis.patch.yml`（dsh.bundle.patch 指向）insert 一行
-  `- id: dsh-proxy-pro, name: 'dsh-proxy-pro', config: {enabled:false, mode:system, ...}`，
+  `- id: dsh-proxy-pro, name: '@yanglaofish/dsh-proxy-pro', config: {enabled:false, mode:system, ...}`，
   格式照抄 dsh-plugin-proxy 自己的 patch。
-- host 解析：一行 `name: 'dsh-proxy-pro'`（包名）→ include import 走 profile
+- host 解析：一行 `name: '@yanglaofish/dsh-proxy-pro'`（包名）→ include import 走 profile
   resolver（app lib/module-resolution-*.js 的 registerHooks）：
   - profile 边界/图内模块的裸包名先按 profile node_modules 解析，
     没有则兜底 app 安装副本（`@deepseek-ai/*` 全在 app；profile 里实际只有
@@ -313,7 +313,7 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
 - client 发现同 skill-manager：package.json `dsh.client.platform: "web"` +
   `exports["./client"]`；exports 应含 `"./cordis.patch.yml"`。
 - 安装命令：`dsh plugin --profile web add <包或 file: 或 github:>`；卸载
-  `dsh plugin --profile web remove dsh-proxy-pro`。
+  `dsh plugin --profile web remove @yanglaofish/dsh-proxy-pro`。
 
 ### 12.2 传输架构（host 重构后，v0.1 落地）
 
