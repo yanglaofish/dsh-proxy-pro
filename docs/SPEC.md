@@ -51,6 +51,7 @@
 | FR-4 | 工具：proxy_status | 同现有语义，读实时快照 |
 | FR-5 | 工具：proxy_set | 开关 + 持久化 + 立即生效（三通道：env/dispatcher/policy） |
 | FR-6 | 工具：proxy_test | 单 URL 路由诊断：PROXIED/DIRECT 判定 + 实际连通探测 + NTLM 提示 |
+| FR-6b | 工具：proxy_config | 读/改配置（enabled / mode / customUrl / noProxy）；参数全可选，无参 = 只读；写入持久化并立即生效 |
 | FR-7 | web_fetch 修复保持 | installProxyFromEnvironment 纳入 sync 主流程 |
 | FR-8 | 系统代理跟随 | mode=system 时周期读注册表，变更才重应用 |
 | FR-9 | 干净卸载 | teardown 恢复 env/dispatcher/policy，无人为残留 |
@@ -192,6 +193,7 @@ installProxyFromEnvironment 的 none-branch 完成：恢复首次安装前的 en
 | proxy_status | – | summarize(snapshot)；active 显示 ON — url (system/custom) |
 | proxy_set | enabled: bool | 更新 settings(PROXY_NS) → requestSync → summarize |
 | proxy_test | url: string | { url, route: PROXIED url/DIRECT, bypassed: bool, probe: {ok,status/short}, hint? } |
+| proxy_config | enabled?/mode?/customUrl?/noProxy?（全可选） | 无参 = 读；有参 = settings.update(PROXY_NS, patch) → requestSync → summarize。customUrl 经 normalizeProxyUrl 校验（裸 host:port 自动补 http://），非法即抛错；空串 = 清除该字段 |
 
 `proxy_test` 内部：`proxyRouteFor(parsed)` 判路由名（try/catch，不可用时回退快照
 推导）→ NO_PROXY 列表命中判断 → `fetch(url, {method:'HEAD', redirect:'manual'})`
@@ -339,11 +341,13 @@ systemPollMs: 30000
 - [ ] A9 teardown（禁用插件/退出）后 process.env 恢复原状、dispatcher 恢复默认
 - [ ] A10 两 profile 均通过 A1-A9
 - [ ] A11 拖拽 → 明确降级为胶囊按钮（无拖拽，符合 spec 决定）
+- [ ] A12 `proxy_config` 无参返回当前配置；写入 mode/customUrl/noProxy 后 status 与
+      settings.yaml 同步且立即生效；非法地址（如 `"not a url"`）抛清晰错误而非静默写入
 
 **观察通道约定**（2026-09-17 补充，重启后逐项按通道确认）：
 - **GUI**：设置页「代理管理」（A1/A8）、对话头部胶囊（A2/A11）——唯一需要
   人工肉眼确认的通道；本地 HTTP 探测会被 app 安全门 403，浏览器内不影响。
-- **会话内工具**：`proxy_status` / `proxy_set` / `proxy_test`（A3/A5/A6/A7）。
+- **会话内工具**：`proxy_status` / `proxy_set` / `proxy_test` / `proxy_config`（A3/A5/A6/A7/A12）。
 - **实测网页请求**：web_fetch 被墙域（A4/A7 的 200/失败行为）。
 - **进程事实**：Get-Process 启动时间 / env（A9 卸载后恢复）。
 

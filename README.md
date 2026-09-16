@@ -54,7 +54,8 @@ dsh web
 - **设置 → 代理管理**：总开关、地址来源（系统代理 / 自定义 / 不使用）、
   自定义地址、NO_PROXY 直连名单、按 URL 的路由诊断。
 - **模型侧**：系统提示实时标注代理状态；工具 `proxy_status`（查询）、
-  `proxy_set`（开关）、`proxy_test`（单 URL 诊断）。
+  `proxy_set`（开关）、`proxy_test`（单 URL 诊断）、`proxy_config`（读/改配置：
+  模式、自定义地址、NO_PROXY 直连名单）。
 
 ## 配置（`settings.yaml` `proxy:` 段，零迁移）
 

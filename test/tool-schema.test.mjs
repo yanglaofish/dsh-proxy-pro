@@ -22,6 +22,7 @@ import path from 'node:path'
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import {
+  PROXY_CONFIG_PARAMETERS,
   PROXY_SET_PARAMETERS,
   PROXY_STATUS_SCHEMA,
   PROXY_TEST_PARAMETERS,
@@ -92,6 +93,14 @@ test('structural: the empty proxy_status parameter map is a legal property map',
   checkPropertyMap({}, 'parameters')
 })
 
+test('structural: proxy_config parameters are all optional and use a mode enum', () => {
+  checkPropertyMap(PROXY_CONFIG_PARAMETERS, 'parameters')
+  for (const [key, value] of Object.entries(PROXY_CONFIG_PARAMETERS)) {
+    assert.ok(!Object.hasOwn(value, 'required'), `parameters.${key} must stay optional (omit required)`)
+  }
+  assert.deepEqual(PROXY_CONFIG_PARAMETERS.mode.enum, ['system', 'custom', 'none'])
+})
+
 /** Locate the real dsh-tools module in a DSH installation. */
 function resolveCompilerModule() {
   const candidates = [
@@ -119,6 +128,7 @@ test('real compiler: every tool schema compiles exactly as defineTool would', as
   tools.parameterSchemaSpecToJsonSchema({})
   tools.parameterSchemaSpecToJsonSchema(PROXY_SET_PARAMETERS)
   tools.parameterSchemaSpecToJsonSchema(PROXY_TEST_PARAMETERS)
+  tools.parameterSchemaSpecToJsonSchema(PROXY_CONFIG_PARAMETERS)
   tools.valueSchemaSpecToJsonSchema(PROXY_STATUS_SCHEMA)
   tools.valueSchemaSpecToJsonSchema(PROXY_TEST_SCHEMA)
   t.diagnostic(`compiled against ${modulePath}`)

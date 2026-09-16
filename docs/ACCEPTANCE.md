@@ -36,6 +36,7 @@
 | 🔵 A7 | 工具 | `proxy_set enabled=false` → `web_fetch` 再试 | 走直连（被墙域可能失败）；再 `proxy_set enabled=true` 恢复 |
 | 👁 A8 | GUI | 设置页把「代理地址来源」切「自定义地址」填 `http://127.0.0.1:9999` | 状态行变「未生效 · 自定义地址无效」，恢复为系统代理 |
 | 🔵 A9 | 观察 | 卸载/退出后 `Get-Process` + env | 代理环境变量与 dispatcher 恢复（不进脚本，靠代码审查保证）|
+| 🔵 A12 | 工具 | `proxy_config` 无参读 → 改 `noProxy`/`mode` | 无参返回当前配置；改后 settings.yaml 同步且状态立即变化；非法地址（`"not a url"`）报清晰错误 |
 
 ## 4. 异常排查
 
