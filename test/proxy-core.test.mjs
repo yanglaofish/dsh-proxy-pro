@@ -101,6 +101,22 @@ test('resolveProxyState: invalid custom address is inactive with a reason', () =
   assert.equal(state.reason, 'invalid-custom-url')
 })
 
+test('resolveProxyState: custom mode keeps only its own NO_PROXY (never the system override)', () => {
+  const facts = { enabled: true, url: 'http://system:8080', http: 'http://system:8080', https: 'http://system:8080', override: '<local>;internal.corp', serverLine: '' }
+  const state = resolveProxyState({ enabled: true, mode: 'custom', customUrl: 'http://127.0.0.1:7890', noProxy: '' }, facts)
+  assert.equal(state.active, true)
+  assert.equal(state.url, 'http://127.0.0.1:7890')
+  assert.equal(state.noProxy, 'localhost,127.0.0.1,::1')
+  assert.ok(!state.noProxy.includes('internal.corp'))
+})
+
+test('resolveProxyState: system mode merges the Windows ProxyOverride into NO_PROXY', () => {
+  const facts = { enabled: true, url: 'http://system:8080', http: 'http://system:8080', https: 'http://system:8080', override: '<local>;internal.corp;*.cn', serverLine: '' }
+  const state = resolveProxyState({ enabled: true, mode: 'system', customUrl: '', noProxy: '' }, facts)
+  assert.equal(state.active, true)
+  assert.equal(state.noProxy, 'localhost,127.0.0.1,::1,internal.corp,*.cn')
+})
+
 test('summarize exposes the fields the tools and API promise', () => {
   const snapshot = {
     config: { enabled: true, mode: 'custom', customUrl: 'http://127.0.0.1:7890', noProxy: '' },
@@ -125,9 +141,17 @@ test('systemFactsEqual treats identical facts as equal', () => {
   assert.equal(systemFactsEqual(a, c), false)
 })
 
-test('keepaliveHint only fires on 407/NTLM signals', () => {
-  assert.ok(keepaliveHint('407 Proxy Authentication Required').length > 0)
+test('keepaliveHint only fires on 407/NTLM signals and uses the given proxy URL', () => {
+  assert.ok(keepaliveHint('407 Proxy Authentication Required', 'http://127.0.0.1:7890').length > 0)
   assert.ok(keepaliveHint('ECONNREFUSED').length === 0)
+})
+
+test('keepaliveHint prefers the caller-provided proxy over a neutral placeholder', () => {
+  const hint = keepaliveHint('407 Proxy Authentication Required', 'http://127.0.0.1:7890')
+  assert.ok(hint.includes('http://127.0.0.1:7890'))
+  const fallback = keepaliveHint('407 Proxy Authentication Required')
+  assert.ok(fallback.includes('localhost'))
+  assert.ok(!fallback.includes('proxyhk'))
 })
 
 test('makeSystemProxyReader queries reg via execFile', async () => {
