@@ -141,6 +141,14 @@ test('systemFactsEqual treats identical facts as equal', () => {
   assert.equal(systemFactsEqual(a, c), false)
 })
 
+test('systemFactsEqual: http/https-only differences are unequal (drive re-sync + effKey rebuild)', () => {
+  const base = { enabled: true, url: 'http://x:8080', http: 'http://x:8080', https: 'http://x:8080', override: '', serverLine: '' }
+  const httpsChanged = { enabled: true, url: 'http://x:8080', http: 'http://x:8080', https: 'http://x:8443', override: '', serverLine: '' }
+  const httpChanged = { enabled: true, url: 'http://y:8080', http: 'http://y:8080', https: 'http://x:8080', override: '', serverLine: '' }
+  assert.equal(systemFactsEqual(base, httpsChanged), false)
+  assert.equal(systemFactsEqual(base, httpChanged), false)
+})
+
 test('keepaliveHint only fires on 407/NTLM signals and uses the given proxy URL', () => {
   assert.ok(keepaliveHint('407 Proxy Authentication Required', 'http://127.0.0.1:7890').length > 0)
   assert.ok(keepaliveHint('ECONNREFUSED').length === 0)
