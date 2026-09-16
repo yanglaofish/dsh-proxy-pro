@@ -347,9 +347,9 @@ systemPollMs: 30000
 - **实测网页请求**：web_fetch 被墙域（A4/A7 的 200/失败行为）。
 - **进程事实**：Get-Process 启动时间 / env（A9 卸载后恢复）。
 
-_运行时快照（2026-09-17 重启后）：host 半 API 路由已在响应
-（`/dsh-proxy-pro/api/status` 返回 fence 拒绝文本 `forbidden`，非 404），
-进程表 12:14 新实例确认重启已发生；待 GUI 确认 A1/A2。_
+_运行时快照（2026-09-17，⚠️ 尚未重启）：`/dsh-proxy-pro/api/status` 与
+不存在路径均返回 403 `forbidden`——这是 DSH 对未认证 HTTP 请求的统一安全门，
+**不能作为插件挂载证据**。插件未加载前路由不注册，待用户重启后按上表验证。_
 
 ---
 
@@ -372,6 +372,6 @@ _运行时快照（2026-09-17 重启后）：host 半 API 路由已在响应
 3. ✅ `lib/client.js`（设置页 → 头部按钮 → 轮询/诊断）
 4. ✅ `cordis.patch.yml` / `package.json`（发布形态）+ git init（commit 04eb709）
 5. ✅ 已装入两 profile + `--dump-config` 预检通过（两个组合树都含 dsh-proxy-pro 行）；
-   ✅ 2026-09-17 已重启（DSH Desktop 12:14 新实例），host API 路由已响应
+   ⏳ 待用户重启（当前**尚未重启**，403 为应用安全门、非插件响应）
 6. ⏳ GUI 确认 A1/A2（头部胶囊 + 设置页「代理管理」）→ 运行时验收 A3-A9
    → obsidian-web A10 → 发布收尾
