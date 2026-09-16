@@ -376,3 +376,45 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
   补测需 mock dsh-http-proxy/dsh-settings，成本中等，留待发布后。
 - client 轮询无 no-op 去重、无超时、慢响应可能乱序显示旧状态——组件极小，
   现实风险低，暂不改。
+
+---
+
+## 14. 桌面 recovery 会静默重写 profile 的 package.json（2026-09-16 事故）
+
+### 14.1 现象与根因
+
+- 用户重启后"啥也没看到"：头部无胶囊、设置页无「代理管理」。
+- 查 `%APPDATA%\DSH Desktop\logs\dsh-<date>.log`：最后一次 run
+  （12:56）**无报错**，但更早一次（11:48）记录了
+  `unsupported JSON schema: schema.properties.probe.additionalProperties`
+  ——这就是 8ce5e21 修的那个 schema bug（跑在修复前）。
+- 决定性证据：`profiles/web/package.json` LastWriteTime = **11:50:28**，
+  恰好在 desktop 的 `recovery plugin uninstall failed`（11:50:09 error.log）
+  窗口内；对读 `profiles/obsidian-web/package.json` 完好（11:35 未动）。
+- **根因：桌面版启动时对解析失败的插件执行 recovery 卸载**
+  （`dsh plugin --profile web remove @yanglaofish/dsh-skill-manager`），
+  该操作重写了 web profile 的 package.json，**把我们手工加的两处
+  dsh-proxy-pro 条目连带清掉**，而 node_modules 的 Junction 软链仍在。
+- 结论：**profile 文件不是只写一次的**——desktop 会在特定条件下用
+  `dsh plugin` 命令重写它。验收前必须复查 package.json 而非只信一次
+  `--dump-config` 的记忆。
+
+### 14.2 修复与预防
+
+- 修复：对照 obsidian-web 的形态把 `dependencies["dsh-proxy-pro"] =
+  link:...` 与 `dsh.profile.bundles` 里的 `"dsh-proxy-pro"` 加回
+  web/package.json；`dsh --profile web --dump-config` 预检两行都在、exit=0。
+- 预防：每次用户重启前**先读 profile 的 package.json** 确认条目在（read
+  工具，别依赖记忆）；recovery 只会在树加载失败时触发——schema 已修 +
+  行在 = 干净加载 = 不会再被重写。
+
+### 14.3 可复用排查路径（"重启后啥也没看到"标准动作）
+
+1. 读 `%APPDATA%\DSH Desktop\logs\dsh-<date>.log` 最后几段——成功 run
+   只有 `--- run ---` 头，失败 run 有 `Error:` 行 + 完整栈（栈里
+   `#dsh-proxy-pro` / `#include` 指向 profiles/web，确认 desktop 用的
+   就是 web profile）。
+2. 对照同一时刻 `dsh-<date>.error.log` 与 profile package.json 的
+   LastWriteTime——两者撞窗 = recovery 重写过。
+3. `dsh --profile web --dump-config` 复检行在树里。
+4. 修好 → 重启 → 按 ACCEPTANCE.md 验收。
