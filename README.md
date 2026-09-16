@@ -145,7 +145,7 @@ npm test
 
 - 纯逻辑层 `lib/proxy-core.js` 零 DSH 依赖，可独立单测。
 - **GitHub 安装模式**：改代码需 `git push` 后 `pnpm update @yanglaofish/dsh-proxy-pro` 再重启 `dsh web` 生效。
-- **npm 安装模式**：bump 版本 → `npm publish --registry=https://registry.npmjs.org` 后，profile 内 `pnpm add @yanglaofish/dsh-proxy-pro@最新版` 再重启 `dsh web` 生效。
+- **npm 安装模式**：bump 版本 → `npm publish --access=public --registry=https://registry.npmjs.org --replace-registry-host=never` 后，profile 内 `pnpm add @yanglaofish/dsh-proxy-pro@最新版` 再重启 `dsh web` 生效。（scoped 包发布必须 `--access=public`；本机 npm 默认 registry 被公司镜像接管且 `replace-registry-host` 会重写 GET——发布与验证一律显式 `--registry` 官方源 + `--replace-registry-host=never`。）
 - **本地开发模式**（改代码重启即生效）：`dsh plugin --profile web add file:../../plugins/dsh-proxy-pro`。
 
 ## 许可
