@@ -1,0 +1,14 @@
+# Bundle patch layer for dsh-proxy-pro: inserts the proxy plugin row into
+# the launcher composition (host half = lib/index.js, browser half = ./client
+# because the package declares dsh.client). The values below are the
+# composition `base` layer — the user can override every field live from the
+# settings UI (Settings → 代理管理), which then takes effect immediately.
+- insert:
+    - id: dsh-proxy-pro
+      name: 'dsh-proxy-pro'
+      config:
+        enabled: false
+        mode: system
+        customUrl: 'http://127.0.0.1:7890'
+        noProxy: 'localhost,127.0.0.1,::1'
+        systemPollMs: 30000
