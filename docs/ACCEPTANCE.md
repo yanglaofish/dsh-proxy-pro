@@ -7,7 +7,7 @@
 ## 0. 前置（已就绪，无需操作）
 
 - [x] 单测 16/16 通过、语法 OK、git 干净（head = afb96b4）
-- [x] web / obsidian-web 两 profile 已装入 `dsh-proxy-pro`（node_modules 为 Junction 软链）
+- [x] web / test 两 profile 已装入 `dsh-proxy-pro`（node_modules 为 Junction 软链）
 - [x] `dsh --dump-config` 预检：两 profile 组合树均含 `- id: dsh-proxy-pro` 行
 - [x] settings.yaml 的 `proxy.enabled: true` → 重启后插件**启动即接管**系统代理（预期行为）
 
@@ -52,9 +52,9 @@
 `<profile>/cordis.patch.yml` 追加一行 `- id: proxy, disabled: true`（禁旧
 dsh-plugin-proxy）→ 重启 → 复测 A1-A6。回滚 = 删该行，settings.yaml 全程不动。
 
-## 6. obsidian-web 复用
+## 6. test 复用
 
-用 `dsh --profile obsidian-web` 启动 → 重复 §2-§3（A10）。
+用 `dsh --profile test` 启动 → 重复 §2-§3（A10）。
 
 ---
 

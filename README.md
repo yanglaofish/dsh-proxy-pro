@@ -21,7 +21,7 @@
 
 ```sh
 dsh plugin --profile web add @yanglaofish/dsh-proxy-pro
-dsh plugin --profile obsidian-web add @yanglaofish/dsh-proxy-pro
+dsh plugin --profile test add @yanglaofish/dsh-proxy-pro
 ```
 
 **方式 B：GitHub 源安装**
@@ -70,7 +70,7 @@ proxy:
 
 ```sh
 dsh plugin --profile web remove @yanglaofish/dsh-proxy-pro
-dsh plugin --profile obsidian-web remove @yanglaofish/dsh-proxy-pro
+dsh plugin --profile test remove @yanglaofish/dsh-proxy-pro
 ```
 
 卸载即恢复原始路由行为，不留残留。

@@ -106,7 +106,7 @@ const envLike = {
 ## 5. 为什么新插件放独立目录（避开 node_modules）
 
 ```
-C:\Users\...\profiles\[web|obsidian-web]\node_modules\dsh-plugin-proxy\package.json
+C:\Users\...\profiles\[web|test]\node_modules\dsh-plugin-proxy\package.json
   LinkType = HardLink → C:\Users\...\pnpm\store\v11\files\...（pnpm 全局 store）
 ```
 
@@ -167,7 +167,7 @@ window.__ModuleLoader__.load({
 });
 ```
 
-技能库里的 `dsh-skill-manager@4.3.3`（obsidian-web profile 已装）是**现代写法参照模板**：
+技能库里的 `dsh-skill-manager@4.3.3`（test profile 已装）是**现代写法参照模板**：
 
 ```js
 ctx.slots.inject("settings.section", () => ctx.slots.register({
@@ -270,7 +270,7 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
 | Web GUI | http://127.0.0.1:43120（NodeService 21872 监听） |
 | 系统代理 | proxyhk.huawei.com:8080（NTLM SWG，Proxy ON） |
 | NO_PROXY | 大列表：`*.huawei.com` 等内网全量 + localhost/127.0.0.1/::1 |
-| profile | web / obsidian-web（两份，插件需都装） |
+| profile | web / test（两份，插件需都装） |
 | settings.yaml | proxy: {enabled: true, mode: system, customUrl: http://127.0.0.1:7890} |
 | 验证基线 | github → PROXIED；deepseek.com → DIRECT；web_fetch PR#3574 → 200 |
 | loadLayeredEnv | process.env + cwd/.env + ~/.dsh/.env（仅 undefined 时写入） |
@@ -280,8 +280,8 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
 - 打包源码：`C:\Users\w00958282\AppData\Local\Programs\DSH Desktop\resources\app\node_modules\@deepseek-ai\...`
   （dsh-web-fetch-http / dsh-http-proxy / dsh-app-boot / dsh-web / dsh-tool-web /
    dsh-client-ui-conversation / dsh-client-ui-chat / dsh-client-modules / dsh-settings）
-- 原插件（已打补丁 + .bak）：`~/.dsh/profiles\{web,obsidian-web}\node_modules\dsh-plugin-proxy\lib\`
-- 参照模板：`~/.dsh/profiles\obsidian-web\node_modules\dsh-skill-manager\lib\`（index.js + client.js）
+- 原插件（已打补丁 + .bak）：`~/.dsh/profiles\{web,test}\node_modules\dsh-plugin-proxy\lib\`
+- 参照模板：`~/.dsh/profiles\test\node_modules\dsh-skill-manager\lib\`（index.js + client.js）
 - 本插件：`~/.dsh/plugins/dsh-proxy-pro/`（git 仓库，发布形态，见 §12）
 - 环境事实：`~/.dsh/.env`（已删，纯冗余证据）；`settings.yaml`、`cordis.patch.yml`、`cordis.yml`
 
@@ -390,7 +390,7 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
   ——这就是 8ce5e21 修的那个 schema bug（跑在修复前）。
 - 决定性证据：`profiles/web/package.json` LastWriteTime = **11:50:28**，
   恰好在 desktop 的 `recovery plugin uninstall failed`（11:50:09 error.log）
-  窗口内；对读 `profiles/obsidian-web/package.json` 完好（11:35 未动）。
+  窗口内；对读 `profiles/test/package.json` 完好（11:35 未动）。
 - **根因：桌面版启动时对解析失败的插件执行 recovery 卸载**
   （`dsh plugin --profile web remove @yanglaofish/dsh-skill-manager`），
   该操作重写了 web profile 的 package.json，**把我们手工加的两处
@@ -401,7 +401,7 @@ POST /dsh-proxy-pro/api/toggle {"enabled":bool} → 更新 settings + 立即 syn
 
 ### 14.2 修复与预防
 
-- 修复：对照 obsidian-web 的形态把 `dependencies["dsh-proxy-pro"] =
+- 修复：对照 test 的形态把 `dependencies["dsh-proxy-pro"] =
   link:...` 与 `dsh.profile.bundles` 里的 `"dsh-proxy-pro"` 加回
   web/package.json；`dsh --profile web --dump-config` 预检两行都在、exit=0。
 - 预防：每次用户重启前**先读 profile 的 package.json** 确认条目在（read

@@ -65,7 +65,7 @@
 | NFR-3 | 可回滚 | 切回原插件只需恢复 cordis.patch.yml 一行 + 保留 `.bak` |
 | NFR-4 | 单一 dispatcher 主人 | 与 dsh-plugin-proxy 二选一启用，不同时 |
 | NFR-5 | 无新增第三方依赖 | 纯 ESM + 现有 DSH 包；逻辑层（proxy-core.js）零依赖可单测 |
-| NFR-6 | 双 profile 部署 | web + obsidian-web 都要装 |
+| NFR-6 | 双 profile 部署 | web + test 都要装 |
 
 ---
 
@@ -321,7 +321,7 @@ systemPollMs: 30000
 3. 重启 DSH → `proxy_status` 确认 active=true、url=proxyhk → 手动 web_fetch
    一个被墙 URL（如 github）确认 200。
 4. 验证 proxy_test github=PROXIED / deepseek=DIRECT。
-5. 再对 obsidian-web profile 做同样操作，重复验证。
+5. 再对 test profile 做同样操作，重复验证。
 6. 回滚 = 恢复原插件行 enabled（settings.yaml 没动过，天然安全），或
    `dsh plugin --profile web remove @yanglaofish/dsh-proxy-pro`。
 
@@ -378,4 +378,4 @@ _运行时快照（2026-09-17，⚠️ 尚未重启）：`/dsh-proxy-pro/api/sta
 5. ✅ 已装入两 profile + `--dump-config` 预检通过（两个组合树都含 dsh-proxy-pro 行）；
    ⏳ 待用户重启（当前**尚未重启**，403 为应用安全门、非插件响应）
 6. ⏳ GUI 确认 A1/A2（头部胶囊 + 设置页「代理管理」）→ 运行时验收 A3-A9
-   → obsidian-web A10 → 发布收尾
+   → test A10 → 发布收尾
