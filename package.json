@@ -1,6 +1,6 @@
 {
   "name": "dsh-proxy-pro",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "DSH proxy manager: route model requests, web fetches and spawned tools through the Windows system proxy or a custom address; per-URL route diagnosis, one-click toggle from the conversation header, a dedicated Settings page, and keepalive-aware 407 hints.",
   "type": "module",
   "main": "./lib/index.js",
@@ -27,6 +27,14 @@
     "undici"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yanglaofish/dsh-proxy-pro.git"
+  },
+  "homepage": "https://github.com/yanglaofish/dsh-proxy-pro",
+  "bugs": {
+    "url": "https://github.com/yanglaofish/dsh-proxy-pro/issues"
+  },
   "scripts": {
     "test": "node --test test/*.mjs"
   },
