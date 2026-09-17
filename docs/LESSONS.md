@@ -806,3 +806,12 @@ API 端点就这样被误判。**404 从来不是「网络不可达」的证据*
 **教训**：① 「PUT syncs 返回 201」只是入队确认，不是同步完成——以 `dist-tags.latest` 为准；
 ② 官方 registry 先可见不代表淘宝可见，淘宝拉取是独立队列；③ 用户规则优先于"省事"——主动
 触发是默认动作，不是可选优化。
+
+**补充：git push 的代理必须与「被暖窗的代理」一致（2026-09-18 实测）**：git 全局配置里写死的
+`http.proxy=http://proxyhk.huawei.com:8080` 是历史遗留——当前网络环境该代理已 407 失效，
+而系统代理是 `proxyza`（南非）。正确姿势：push 前用 `Invoke-WebRequest https://github.com`
+暖**当前系统代理**（.NET 自动 NTLM），然后 `git -c http.proxy=http://<当前系统代理> push`
+（用 `-c` 临时覆盖写死的 config）。若暖窗对象与 git 实际走的代理不一致，必然 407 CONNECT
+tunnel failed（proxyhk 暖窗 407、proxyza 暖窗 200 → 只有后者能推成功）。长期可选：
+`git config --global --unset http.proxy` 让 git 走插件写入的 `http_proxy` 环境变量（动态跟随
+当前系统代理），注意 CLI 环境无插件时需手动 `-c` 指定。
