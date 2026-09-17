@@ -676,3 +676,27 @@ E  外部 undici 的 fetch + 同一 ProxyAgent -> OK 401
 **结论**：本插件与 `dsh-http-proxy` 插件行**二选一**。库本身必须保留——插件 import 它的
 `installProxyFromEnvironment` / `proxyRouteFor`，而 DSH 的 web_fetch 通道读的正是同一模块的
 module-level policy（§2-§3）。卸载"插件行"是安全的，删除"包"会让本插件 import 直接失败。
+
+---
+
+## 24. 诊断结论要三态 + 可行动（2026-09-17）
+
+**症状**：面板与 `proxy_test` 的「连通探测」只分可达/不可达两档——`HTTP 504`（网关/上游超时）
+和 `HTTP 200` 都打印成「可达」，用户无法判断"到底能不能用"。
+
+**改法**（1.0.3）：
+
+- `classifyProbeStatus(status)` 产出三态：
+  - `usable`：2xx/3xx，以及 **401**（探测不带凭证，服务健康就该回 401）；
+  - `degraded`：403/404/405/429 等 4xx —— **路由通、这次调用会失败**；
+  - `unusable`：407、5xx（500/502/503/504）—— 路由或对端失败。
+- 每个结论都带 `why`（可能原因）+ `fix`（挽救措施）：面板显示三层
+  （连通探测 / 可能原因 / 挽救措施），`proxy_test` 输出 `Why:` / `Fix:` 行。
+- `classifyTargetFailure` 同样补齐 why/fix，并按 ENOTFOUND / ECONNREFUSED / ETIMEDOUT /
+  ECONNRESET / UND_ERR_INVALID_ARG / 407 分别归类。
+- 探测顺序：**HEAD →（405/501 时）GET `Range: bytes=0-0` 复测**。很多 API 只实现 GET，
+  单用 HEAD 会冤枉一个可用主机；复测结果里附 `note` 说明。
+
+**教训**：诊断工具的返回值必须回答"能不能用"和"下一步怎么办"——只回一个状态码，等于把问题
+又丢回给用户。另外 `additionalProperties: false` 的 schema 必须同步列出新字段
+（verdict/why/fix/note），否则 defineTool 校验直接失败。

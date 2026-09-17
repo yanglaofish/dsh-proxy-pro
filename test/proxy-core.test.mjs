@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  classifyProbeStatus,
   classifyTargetFailure,
   composeNoProxy,
   keepaliveHint,
@@ -176,12 +177,16 @@ test('makeSystemProxyReader queries reg via execFile', async () => {
   assert.ok(calls.length >= 3)
 })
 
-test('classifyTargetFailure names the connection code', () => {
+test('classifyTargetFailure names the connection code and stays actionable', () => {
   const dns = classifyTargetFailure({ cause: { code: 'ENOTFOUND' } })
   assert.equal(dns.kind, 'unreachable')
+  assert.equal(dns.verdict, 'unusable')
   assert.match(dns.short, /ENOTFOUND/)
-  assert.match(dns.short, /needs a proxy route/)
-  assert.equal(classifyTargetFailure({ cause: { code: 'ECONNREFUSED' } }).kind, 'unreachable')
+  assert.ok(dns.why.length > 0)
+  assert.ok(dns.fix.length > 0)
+  const refused = classifyTargetFailure({ cause: { code: 'ECONNREFUSED' } })
+  assert.equal(refused.kind, 'unreachable')
+  assert.match(refused.short, /refused/i)
 })
 
 test('classifyTargetFailure flags a mixed-undici dispatcher rejection', () => {
@@ -197,13 +202,69 @@ test('classifyTargetFailure flags a mixed-undici dispatcher rejection', () => {
 })
 
 test('classifyTargetFailure keeps the cause detail instead of a bare "fetch failed"', () => {
-  const verdict = classifyTargetFailure({ message: 'fetch failed', cause: { code: 'ECONNRESET', message: 'socket hang up' } })
-  assert.equal(verdict.kind, 'other')
-  assert.match(verdict.short, /fetch failed/)
-  assert.match(verdict.short, /ECONNRESET/)
+  const reset = classifyTargetFailure({ message: 'fetch failed', cause: { code: 'ECONNRESET', message: 'socket hang up' } })
+  assert.equal(reset.kind, 'unreachable')
+  assert.match(reset.short, /ECONNRESET/)
+  const unknown = classifyTargetFailure({ message: 'fetch failed', cause: { code: 'EUNKNOWNCODE', message: 'mystery' } })
+  assert.equal(unknown.kind, 'other')
+  assert.match(unknown.short, /fetch failed/)
+  assert.match(unknown.short, /EUNKNOWNCODE/)
 })
 
-test('classifyTargetFailure detects an NTLM proxy demand', () => {
+test('classifyTargetFailure detects an NTLM proxy demand and probe aborts', () => {
   assert.equal(classifyTargetFailure({ message: 'HTTP 407 proxy authentication required' }).kind, 'auth')
   assert.equal(classifyTargetFailure({ message: 'HTTP 407 — the proxy asks for authentication' }).kind, 'auth')
+  const timeout = classifyTargetFailure({ name: 'AbortError', message: 'This operation was aborted' })
+  assert.equal(timeout.kind, 'unreachable')
+  assert.match(timeout.short, /timeout/i)
+})
+
+test('classifyProbeStatus: 2xx/3xx and 401 are usable', () => {
+  for (const code of [200, 204, 301, 302]) {
+    const v = classifyProbeStatus(code)
+    assert.equal(v.ok, true)
+    assert.equal(v.verdict, 'usable')
+    assert.equal(v.status, code)
+    assert.equal(v.why, '')
+    assert.equal(v.fix, '')
+  }
+  const auth = classifyProbeStatus(401)
+  assert.equal(auth.ok, true)
+  assert.equal(auth.verdict, 'usable')
+  assert.match(auth.short, /401/)
+})
+
+test('classifyProbeStatus: 4xx is degraded with a cause and a fix', () => {
+  for (const code of [403, 404, 405, 429, 418]) {
+    const v = classifyProbeStatus(code)
+    assert.equal(v.ok, false)
+    assert.equal(v.verdict, 'degraded')
+    assert.ok(v.why.length > 0, `why missing for ${code}`)
+    assert.ok(v.fix.length > 0, `fix missing for ${code}`)
+  }
+  assert.match(classifyProbeStatus(405).short, /HEAD/)
+  assert.match(classifyProbeStatus(404).short, /404/)
+})
+
+test('classifyProbeStatus: gateway and server errors are unusable, not "reachable"', () => {
+  for (const code of [500, 502, 503, 504]) {
+    const v = classifyProbeStatus(code)
+    assert.equal(v.ok, false)
+    assert.equal(v.verdict, 'unusable')
+    assert.match(v.short, new RegExp(String(code)))
+    assert.ok(v.why.length > 0 && v.fix.length > 0)
+  }
+  // the regression this classification exists for: 504 used to print as reachable
+  const timeout = classifyProbeStatus(504)
+  assert.equal(timeout.verdict, 'unusable')
+  assert.match(timeout.why, /upstream|timeout/i)
+})
+
+test('classifyProbeStatus: 407 is unusable and names the proxy auth wall', () => {
+  const v = classifyProbeStatus(407)
+  assert.equal(v.ok, false)
+  assert.equal(v.verdict, 'unusable')
+  assert.equal(v.kind, 'auth')
+  assert.match(v.short, /407/)
+  assert.match(v.fix, /curl/)
 })
