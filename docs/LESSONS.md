@@ -700,3 +700,27 @@ module-level policy（§2-§3）。卸载"插件行"是安全的，删除"包"�
 **教训**：诊断工具的返回值必须回答"能不能用"和"下一步怎么办"——只回一个状态码，等于把问题
 又丢回给用户。另外 `additionalProperties: false` 的 schema 必须同步列出新字段
 （verdict/why/fix/note），否则 defineTool 校验直接失败。
+
+---
+
+## 25. 策略通道也要同一 undici 副本（2026-09-17）
+
+**症状**：1.0.3 面板「连通探测」（不勾选「使用代理」）显示
+`不可用：dispatcher rejected by this undici instance (UND_ERR_INVALID_ARG) — mixed undici copies`。
+
+**根因**：1.0.2 只修了强制通道（`und.fetch` + 同副本 dispatcher，§22）。策略通道一直用 Node
+内置 `fetch` 且不传 dispatcher —— 但全局 dispatcher 是 `installProxyFromEnvironment` 用 **app
+undici** 装的，内置 fetch 拿它发请求 = A 组合（内置 fetch + 外部 Agent）→ 必然
+UND_ERR_INVALID_ARG。之前没暴露，是因为面板默认勾选「使用代理」（强制通道）掩盖了它。
+
+**修法**（1.0.4）：策略通道同样走 app undici——
+`policyProbe()` = `und.fetch(url, { dispatcher: und.getGlobalDispatcher() })`。
+`getGlobalDispatcher()` 返回的正是 web_fetch 通道在用的全局 dispatcher，语义 = 模拟 web_fetch，
+且永远同副本。三条探测路径现在统一：policy = 全局 dispatcher / forced-direct = 新建 Agent /
+forced-proxy = 新建 ProxyAgent，全部由 `und.fetch` 发起。
+
+**连带**：所有展示文案（short/why/fix/hint）中文化——面板是中文 UI，英文 why/fix 让人无法
+行动；`proxy_test` 工具输出同步中文（模型照读）。教训：给用户看的文案别用英文"图省事"，
+判定结论必须能直接用。
+
+**测试**：断言随中文文案同步翻新（/混用/、/超时/、/上游|超时/、/ECONNREFUSED/）。

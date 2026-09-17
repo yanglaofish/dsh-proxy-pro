@@ -186,7 +186,7 @@ test('classifyTargetFailure names the connection code and stays actionable', () 
   assert.ok(dns.fix.length > 0)
   const refused = classifyTargetFailure({ cause: { code: 'ECONNREFUSED' } })
   assert.equal(refused.kind, 'unreachable')
-  assert.match(refused.short, /refused/i)
+  assert.match(refused.short, /ECONNREFUSED/)
 })
 
 test('classifyTargetFailure flags a mixed-undici dispatcher rejection', () => {
@@ -196,7 +196,7 @@ test('classifyTargetFailure flags a mixed-undici dispatcher rejection', () => {
   })
   assert.equal(verdict.kind, 'dispatcher')
   assert.match(verdict.short, /UND_ERR_INVALID_ARG/)
-  assert.match(verdict.short, /mixed undici copies/)
+  assert.match(verdict.short, /混用/)
   // the message is enough even when the code is missing
   assert.equal(classifyTargetFailure({ cause: { message: 'invalid onRequestStart method' } }).kind, 'dispatcher')
 })
@@ -216,7 +216,7 @@ test('classifyTargetFailure detects an NTLM proxy demand and probe aborts', () =
   assert.equal(classifyTargetFailure({ message: 'HTTP 407 — the proxy asks for authentication' }).kind, 'auth')
   const timeout = classifyTargetFailure({ name: 'AbortError', message: 'This operation was aborted' })
   assert.equal(timeout.kind, 'unreachable')
-  assert.match(timeout.short, /timeout/i)
+  assert.match(timeout.short, /超时/)
 })
 
 test('classifyProbeStatus: 2xx/3xx and 401 are usable', () => {
@@ -257,7 +257,7 @@ test('classifyProbeStatus: gateway and server errors are unusable, not "reachabl
   // the regression this classification exists for: 504 used to print as reachable
   const timeout = classifyProbeStatus(504)
   assert.equal(timeout.verdict, 'unusable')
-  assert.match(timeout.why, /upstream|timeout/i)
+  assert.match(timeout.why, /上游|超时/)
 })
 
 test('classifyProbeStatus: 407 is unusable and names the proxy auth wall', () => {
