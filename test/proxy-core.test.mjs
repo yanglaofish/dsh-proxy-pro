@@ -8,6 +8,7 @@ import {
   classifyProbeStatus,
   classifyTargetFailure,
   composeNoProxy,
+  headNeedsGetRetry,
   keepaliveHint,
   makeSystemProxyReader,
   normalizeProxyUrl,
@@ -244,6 +245,21 @@ test('classifyProbeStatus: 4xx is degraded with a cause and a fix', () => {
   }
   assert.match(classifyProbeStatus(405).short, /HEAD/)
   assert.match(classifyProbeStatus(404).short, /404/)
+})
+
+test('headNeedsGetRetry: a HEAD 404 must be retried with GET (网关的 HEAD 陷阱)', () => {
+  for (const code of [404, 405, 501]) {
+    assert.equal(headNeedsGetRetry(code), true, `HEAD ${code} should retry with GET`)
+  }
+  for (const code of [200, 204, 301, 401, 403, 407, 429, 500, 502, 503, 504]) {
+    assert.equal(headNeedsGetRetry(code), false, `HEAD ${code} should not retry`)
+  }
+})
+
+test('classifyProbeStatus: a double 404 points at the real endpoint, not the network', () => {
+  const v = classifyProbeStatus(404)
+  assert.match(v.why, /GET/)
+  assert.match(v.fix, /端点/)
 })
 
 test('classifyProbeStatus: gateway and server errors are unusable, not "reachable"', () => {

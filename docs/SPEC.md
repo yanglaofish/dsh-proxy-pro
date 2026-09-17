@@ -199,7 +199,9 @@ installProxyFromEnvironment 的 none-branch 完成：恢复首次安装前的 en
 
 `proxy_test` 内部：`proxyRouteFor(parsed)` 判路由名（try/catch，不可用时回退快照
 推导）→ NO_PROXY 列表命中判断 → `fetch(url, {method:'HEAD', redirect:'manual'})`
-实测 6s 超时（AbortController）→ `classifyTargetFailure` 归类
+实测 6s 超时（AbortController）；HEAD 状态为 404/405/501 时按 `headNeedsGetRetry`
+用 GET（`Range: bytes=0-0`）复测并以 GET 为准（LESSONS §27：网关常不给 HEAD 注册
+路由，HEAD 404 ≠ 路径不存在）→ `classifyTargetFailure` 归类
 （EACCES/ENETUNREACH/EHOSTUNREACH → "needs a proxy route"；407/NTLM → auth）。
 
 ### 4.7 系统提示段落

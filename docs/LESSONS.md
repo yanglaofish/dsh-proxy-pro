@@ -751,3 +751,33 @@ scope.watch(() => { void requestSync().catch(() => {}) })
 **教训**：① ESM 顶层 import 命中断言是**加载期**错误——一次错误的 import 能杀死整个进程，所以
 对外部包的导出要查运行环境的实际版本，而不是凭记忆；② 能从服务拿到的（settings 是 inject 服务）
 就不要 import 包；③ 「桌面版」与「全局 CLI 版」是两套依赖树，一个功能必须两端都能加载。
+
+---
+
+## 27. HEAD 404 ≠ 路径不存在：探测必须 GET 复测（2026-09-18）
+
+**症状**：面板测 `https://dashscope.aliyuncs.com/compatible-mode/v1` 和 `.../v1/models`
+一律显示「降级 — HTTP 404 — 路径不存在」；连测几个厂商的 API 都是 404，用户开始怀疑
+「是不是网络不可达」。
+
+**真相**（实测对照）：
+
+| 请求 | DashScope 应答 |
+| --- | --- |
+| GET `/compatible-mode/v1/models` | **401**（端点存在，只缺 API Key） |
+| GET `/compatible-mode/v1/chat/completions` | **400**（端点存在，请求不合法） |
+| GET `/` | 404 |
+| HEAD `/compatible-mode/v1/models` | **404** ← 同一个端点！ |
+
+网关不给 HEAD 注册路由，对 HEAD 一律回 404；而 404 被探测当成「路径不存在」，健康的
+API 端点就这样被误判。**404 从来不是「网络不可达」的证据**——它恰恰证明拿到了 HTTP 应答
+（真正的不可达是 ENOTFOUND/ECONNREFUSED/ETIMEDOUT/代理 407）。
+
+**改法**（1.0.7）：回退条件从 405/501 扩到 **404/405/501**，提为纯函数
+`headNeedsGetRetry(status)`（proxy-core，可单测）。GET 复测带 `Range: bytes=0-0` 只取首
+字节，代价极小；note 写明「HEAD 返回 X，GET 得到 Y — 以 GET 为准」。404 的 why/fix 改为
+「HEAD 与 GET 都 404」并引导换真实完整端点复测。
+
+**教训**：① 探测方法本身就是误判来源——HEAD「轻量」不等于「等价」；② 把 404 当「不存在」
+之前先问「服务器认不认这个方法」；③ 状态码是二手的，链路层结论只能由「是否拿到 HTTP
+应答」给出。
