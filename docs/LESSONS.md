@@ -634,3 +634,45 @@ git log --oneline  # 历史完整（refs/heads/master 里的 tip 仍在）
 若 refs 也没了，就只能等网络恢复后 `git fetch` 远端历史再 `git reset --mixed origin/<branch>`。
 本例 `git fetch` 失败于 `Could not resolve proxy: proxyhk.huawei.com`——git 的 `http.proxy`
 指向公司代理，离开公司网络（或代理关闭）时 GitHub 不可达；此时**不要** push/force push。
+
+---
+
+## 22. 强制通道探测必须用同一个 undici 副本（2026-09-17）
+
+**症状**：设置页「代理配置」的逐 URL 诊断，无论勾不勾「使用代理」都返回 `fail`
+（面板只显示 `fetch failed`）；而 `curl`、独立 node 进程、policy 通道都正常。
+
+**根因（实测）**：`forceChannelProbe` 用 `import('undici')`（app 的 undici 包）造
+`Agent`/`ProxyAgent`，却把它交给**全局 `fetch`**（Node 内置的另一份 undici）当 `dispatcher`：
+
+```
+CONTROL 内置 fetch（无 dispatcher）        -> OK 401
+A  内置 fetch + 外部 undici Agent         -> ERR fetch failed | UND_ERR_INVALID_ARG: invalid onRequestStart method
+B  外部 undici 的 fetch + 同一 Agent      -> OK 401
+D  内置 fetch + 外部 ProxyAgent           -> ERR fetch failed | UND_ERR_INVALID_ARG
+E  外部 undici 的 fetch + 同一 ProxyAgent -> OK 401
+```
+
+**规矩**：凡是要传 `dispatcher` 的请求，**请求与被传的 dispatcher 必须来自同一次
+`import('undici')`**（即 `und.fetch(url, { dispatcher })`）。这正是 §3 的老教训
+（mixed undici instances → UND_ERR_INVALID_ARG）——插件主干一直靠"委托
+`installProxyFromEnvironment`、自己绝不碰 undici"规避它，而强制通道绕过了这条原则。
+
+**顺带修掉的诊断缺陷**：`classifyTargetFailure` 原本只回 `error.message`（"fetch failed"），
+丢掉了 `error.cause` 里的 `code`。现在优先输出 cause code，并把 `UND_ERR_INVALID_ARG`
+单独归类（`kind: 'dispatcher'`，提示 "mixed undici copies"）。
+
+---
+
+## 23. 与 @deepseek-ai/dsh-http-proxy 插件行共存会抢全局 dispatcher
+
+同一天的另一条线索：把 `@deepseek-ai/dsh-http-proxy` **作为插件行同时启用**时，policy 通道
+探测也出现过 `fetch failed`；从 profile 的 bundles/依赖里移除该行后恢复正常。
+
+原因：两个插件都调同一个库的 `installProxyFromEnvironment()`，各自
+`setGlobalDispatcher()`；谁先卸载，谁的 disposer 就把"它安装前"的 dispatcher
+（`previousDispatcher`）恢复回去，全局 dispatcher 于是可能指向已关闭/陈旧实例。
+
+**结论**：本插件与 `dsh-http-proxy` 插件行**二选一**。库本身必须保留——插件 import 它的
+`installProxyFromEnvironment` / `proxyRouteFor`，而 DSH 的 web_fetch 通道读的正是同一模块的
+module-level policy（§2-§3）。卸载"插件行"是安全的，删除"包"会让本插件 import 直接失败。

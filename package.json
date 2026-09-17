@@ -1,6 +1,6 @@
 {
   "name": "@yanglaofish/dsh-proxy-pro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "DSH proxy manager: route model requests, web fetches and spawned tools through the Windows system proxy or a custom address; per-URL route diagnosis, one-click toggle from the conversation header, a dedicated Settings page, and keepalive-aware 407 hints.",
   "type": "module",
   "main": "./lib/index.js",

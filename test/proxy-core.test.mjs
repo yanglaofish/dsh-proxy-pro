@@ -5,6 +5,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  classifyTargetFailure,
   composeNoProxy,
   keepaliveHint,
   makeSystemProxyReader,
@@ -173,4 +174,36 @@ test('makeSystemProxyReader queries reg via execFile', async () => {
   const facts = await reader()
   assert.equal(facts.enabled, true)
   assert.ok(calls.length >= 3)
+})
+
+test('classifyTargetFailure names the connection code', () => {
+  const dns = classifyTargetFailure({ cause: { code: 'ENOTFOUND' } })
+  assert.equal(dns.kind, 'unreachable')
+  assert.match(dns.short, /ENOTFOUND/)
+  assert.match(dns.short, /needs a proxy route/)
+  assert.equal(classifyTargetFailure({ cause: { code: 'ECONNREFUSED' } }).kind, 'unreachable')
+})
+
+test('classifyTargetFailure flags a mixed-undici dispatcher rejection', () => {
+  const verdict = classifyTargetFailure({
+    message: 'fetch failed',
+    cause: { code: 'UND_ERR_INVALID_ARG', message: 'invalid onRequestStart method' },
+  })
+  assert.equal(verdict.kind, 'dispatcher')
+  assert.match(verdict.short, /UND_ERR_INVALID_ARG/)
+  assert.match(verdict.short, /mixed undici copies/)
+  // the message is enough even when the code is missing
+  assert.equal(classifyTargetFailure({ cause: { message: 'invalid onRequestStart method' } }).kind, 'dispatcher')
+})
+
+test('classifyTargetFailure keeps the cause detail instead of a bare "fetch failed"', () => {
+  const verdict = classifyTargetFailure({ message: 'fetch failed', cause: { code: 'ECONNRESET', message: 'socket hang up' } })
+  assert.equal(verdict.kind, 'other')
+  assert.match(verdict.short, /fetch failed/)
+  assert.match(verdict.short, /ECONNRESET/)
+})
+
+test('classifyTargetFailure detects an NTLM proxy demand', () => {
+  assert.equal(classifyTargetFailure({ message: 'HTTP 407 proxy authentication required' }).kind, 'auth')
+  assert.equal(classifyTargetFailure({ message: 'HTTP 407 — the proxy asks for authentication' }).kind, 'auth')
 })
