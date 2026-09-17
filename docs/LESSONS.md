@@ -781,3 +781,28 @@ API 端点就这样被误判。**404 从来不是「网络不可达」的证据*
 **教训**：① 探测方法本身就是误判来源——HEAD「轻量」不等于「等价」；② 把 404 当「不存在」
 之前先问「服务器认不认这个方法」；③ 状态码是二手的，链路层结论只能由「是否拿到 HTTP
 应答」给出。
+
+---
+
+## 28. 发布铁律：每次 npm publish 后必须主动强制触发淘宝源同步（用户定案，2026-09-18）
+
+**用户的规矩（说了两次，不可违背）**：每次我们更新 npm 包（publish 成功）后，**必须手动
+主动触发淘宝源（npmmirror）更新，不许等待**——用户原话「每次更新了 npm，都请你手动强制
+触发淘宝源更新」「不要等待，就是走淘宝的主动同步」。
+
+**为什么**：npmmirror 自己拉取官方源有队列延迟，干等（只 PUT 一次 syncs 然后 poll）会 stuck
+几分钟甚至更久，导致 `dsh plugin add <新版本>` 在淘宝源上解析不到。**主动循环触发**（每轮
+先 PUT syncs、再 poll）实测 1.0.5=11 轮、1.0.6=13 轮、1.0.7=33 轮（约 2-4 分钟）必定拉到。
+
+**标准流程（每一步都要做）**：
+1. `npm publish --access=public --registry=https://registry.npmjs.org --replace-registry-host=never` 成功；
+2. 循环最多 60 轮：`PUT https://registry.npmmirror.com/-/package/@yanglaofish%2Fdsh-proxy-pro/syncs`
+   带 body `{"version":"<新版本>"}`（ContentType application/json），随后
+   `GET https://registry.npmmirror.com/@yanglaofish%2Fdsh-proxy-pro` 看 `dist-tags.latest`；
+   每轮间隔 8-10s，**一直循环到 latest == 新版本**（不许提前放弃）；
+3. latest 到位后立即：`dsh plugin --profile test add '@yanglaofish/dsh-proxy-pro@^<新版本>'`
+   与 `dsh plugin --profile web add ...`，并验证两个 profile 的 node_modules 版本。
+
+**教训**：① 「PUT syncs 返回 201」只是入队确认，不是同步完成——以 `dist-tags.latest` 为准；
+② 官方 registry 先可见不代表淘宝可见，淘宝拉取是独立队列；③ 用户规则优先于"省事"——主动
+触发是默认动作，不是可选优化。
