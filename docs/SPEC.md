@@ -105,7 +105,7 @@ profile 内安装（pnpm nodeLinker: hoisted；本地=file: 软链，发布=regi
 
 ```
 [浏览器 client.js]                    [host index.js (NodeService 链)]
-  │  inject settings.section            │  installSettingsSection(proxy NS)
+  │  inject settings.section            │  ctx.settings.register('proxy') + watch
   │  inject header.utilities            │  sync(): resolve → applyEffective(env+dispatcher)
   │  fetch /dsh-proxy-pro/api/*  ◄──────┤          → installProxyFromEnvironment(policy)
   │                                     │              ↓ 让 web_fetch 的 proxyRouteFor 判 PROXIED
@@ -140,7 +140,9 @@ function apply(ctx, config) { … }   // 导出 { Config, apply, inject, name }
 - **没有 savedEnv / EnvHttpProxyAgent / 手写 dispatcher**：传输完全委托
   `installProxyFromEnvironment`（env + 全局 dispatcher + 模块级策略一体，
   LESSONS §12.4：单一通道，杜绝 undici 错版）。
-- `installSettingsSection(ctx, PROXY_NS, Config, config, { setSource, onChange })`，
+- `ctx.settings.register(PROXY_NS, Config, { base: config })` 拿 owner scope，
+  `source = () => scope.get()`，`scope.watch(onChange)` —— 新版 dsh-settings 已移除
+  `installSettingsSection` 导出（LESSONS §26），必须走 settings 服务；
   onChange → `requestSync()`（合并去重，`syncing` 单飞）。
 - teardown（`ctx.effect`）：清 pollTimer → `await httpProxyPolicy?.()`（卸载=恢复
   env/dispatcher/策略）。

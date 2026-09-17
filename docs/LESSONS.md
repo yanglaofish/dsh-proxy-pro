@@ -724,3 +724,30 @@ forced-proxy = 新建 ProxyAgent，全部由 `und.fetch` 发起。
 判定结论必须能直接用。
 
 **测试**：断言随中文文案同步翻新（/混用/、/超时/、/上游|超时/、/ECONNREFUSED/）。
+
+---
+
+## 26. 不 import 会被移除的库导出：settings 走服务（2026-09-18）
+
+**症状**：升级 test profile 后，dsh CLI 启动时整棵树崩溃：
+`SyntaxError: The requested module '@deepseek-ai/dsh-settings' does not provide an export named 'installSettingsSection'`，
+插件行加载失败 → 整个启动终止。
+
+**根因**：dsh-settings 同时存在两个版本——桌面版（resources/app/node_modules）**保留**了
+`installSettingsSection`/`settingsNamespace` 兼容导出；全局 dsh CLI（AppData/Roaming/npm 的
+`@deepseek-ai/dsh` 自带依赖树）是**新版，已移除这两个导出**。插件在模块顶层
+`import { installSettingsSection } from '@deepseek-ai/dsh-settings'` → ESM 求值阶段就抛
+SyntaxError，不是运行期错误——profile 插件树加载失败，启动直接终止。
+
+**改法**（1.0.5）：彻底不 import dsh-settings 的任何导出，配置注册改走 **settings 服务**：
+```js
+const scope = ctx.settings.register(PROXY_NS, Config, { base: config })
+source = () => scope.get()                 // update() 重算 registration.resolved，get() 始终新鲜
+scope.watch(() => { void requestSync().catch(() => {}) })
+```
+`register`/`watch`/`update`/`replace` 在两端（旧桌面版 SettingsProvider 与新 CLI 版）都存在；
+命名空间直接写字面量 `'proxy'`（旧 `settingsNamespace()` 也只是 parse + 校验）。
+
+**教训**：① ESM 顶层 import 命中断言是**加载期**错误——一次错误的 import 能杀死整个进程，所以
+对外部包的导出要查运行环境的实际版本，而不是凭记忆；② 能从服务拿到的（settings 是 inject 服务）
+就不要 import 包；③ 「桌面版」与「全局 CLI 版」是两套依赖树，一个功能必须两端都能加载。
