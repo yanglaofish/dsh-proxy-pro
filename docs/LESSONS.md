@@ -815,3 +815,46 @@ API 端点就这样被误判。**404 从来不是「网络不可达」的证据*
 tunnel failed（proxyhk 暖窗 407、proxyza 暖窗 200 → 只有后者能推成功）。长期可选：
 `git config --global --unset http.proxy` 让 git 走插件写入的 `http_proxy` 环境变量（动态跟随
 当前系统代理），注意 CLI 环境无插件时需手动 `-c` 指定。
+
+## 29. npm 发布 403 的根因链 + 绕行法（2026-09-18 发布 1.0.9 实测，抓原始响应体）
+
+**背景**：`npm publish` 报 `403 Forbidden - PUT registry.npmjs.org`，换 token/重登录/纠结
+2FA 都没用，最后靠"抓 npmjs 原始响应体 + curl 直发"解决。**核心教训：npm CLI 的 403
+错误是泛化的，必须抓 PUT 的 HTTP body 才能知道真实拒绝原因。**
+
+**根因链（三层，缺一不可）**：
+1. **granular token 必须勾选「Bypass 2FA」才能发布**——与直觉相反！
+   抓到的原始 body：`{"error":"Two-factor authentication or granular access token with
+   bypass 2fa enabled is required to publish packages."}`
+   即：账号没开 2FA 时，token **必须**带 bypass-2FA 标志才被允许发布；不勾 → 403。
+   注意 CLI 每次 403 都打印的 notice「bypass-2FA tokens are being restricted for direct
+   publishing」是 2027-01 才生效的预告，**不是**当下拒绝的原因（差点被带偏）。
+2. **npm CLI 的 publish 走 otplease 路径，对老包（已有 8 个历史版本+dist-tags）403，
+   而 curl 同 token 直发正常**（对照实验：同 CLI 发全新测试包成功 → 排除 CLI 整体坏；
+   同 token curl 骨架 PUT → 400=权限已过只是数据无效）。绕行：
+3. **curl 完整 couch 格式 PUT 直发**（含 `_attachments` 里 base64 tarball）→ `202 Accepted`，
+   随后 `latest` 落库为 1.0.9。这条路径等价于官方 `npm stage publish` 的直发变体。
+
+**Staged Publishing（2026-05-22 上线的 npm 新机制，别被 202 骗了）**：
+- 2026-05-22 起 npm 全面启用 staged publishing：发布先进暂存队列，**需真人维护者 2FA 批准
+  才落地**。`202 Accepted` 只是入队成功，GET 简短延迟后可见；再 PUT 同版本 → `409
+  {"error":"Cannot publish over previously staged version \"1.0.9\""}`（证明已入队）。
+- 官方正解流程：`npm stage publish`（暂存）→ `npm stage approve <stage-id>`（带 2FA 批准），
+  或网页 npmjs.com 批准；CI 建议 trusted publishing (OIDC)。
+- **坑**：`npm stage list` 默认打向 user `.npmrc` 里的 registry（华为镜像
+  `/-/stage` 504 超时）→ 必须显式 `--registry=https://registry.npmjs.org`。
+
+**配套工具坑（本次踩到三次）**：
+- PowerShell `Set-Content -Encoding UTF8` 会写 BOM → node `JSON.parse` 直接炸
+  （`Unexpected token '\ufeff'`）。写 JSON/脚本给 node 用必须
+  `[IO.File]::WriteAllText($path, $txt, [Text.UTF8Encoding]::new($false))`。
+- node 脚本 argv 下标：`process.argv[1]` 是**脚本自身路径**，业务参数从 `argv[2]` 起
+  （写 `${argv[1]}` 会把脚本内容当 JSON 读，报诡异错误）。
+- `npm pack` 产出的 tarball 文件名**不带 scope**：`dsh-proxy-pro-1.0.9.tgz`
+  （不是 `yanglaofish-dsh-proxy-pro-1.0.9.tgz`），验证 200 时容易 404 误报。
+
+**发布 1.0.9 的最终验证链**：npmjs `latest=1.0.9` + tarball 200(65582B) →
+npmmirror sync 主动触发（201）→ npmmirror `latest=1.0.9` + tarball 200(65582B) →
+test profile `pnpm install` 装 1.0.9 → 双通道新逻辑在位置（dualBadge/both-reached）→
+腾讯 Copilot 场景复验：代理 🟡「链路通·目标拒绝」+ 直连 🔴 → 「只有走代理可达」（旧版误报
+双失败，修复后正确）。

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import {
   classifyProbeStatus,
   classifyTargetFailure,
+  combineDualProbe,
   composeNoProxy,
   headNeedsGetRetry,
   keepaliveHint,
@@ -283,4 +284,102 @@ test('classifyProbeStatus: 407 is unusable and names the proxy auth wall', () =>
   assert.equal(v.kind, 'auth')
   assert.match(v.short, /407/)
   assert.match(v.fix, /curl/)
+})
+
+test('combineDualProbe: both legs OK → both-ok, green badges, keep current policy', () => {
+  const proxy = classifyProbeStatus(200)
+  const direct = classifyProbeStatus(200)
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'both-ok')
+  assert.equal(c.proxyBadge.tone, 'ok')
+  assert.equal(c.directBadge.tone, 'ok')
+  assert.match(c.fix, /保持当前策略/)
+})
+
+test('combineDualProbe: only proxy works → proxy-only (domain needs the proxy)', () => {
+  const proxy = classifyProbeStatus(200)
+  const direct = { ok: false, verdict: 'unusable', kind: 'unreachable', short: '直连不可达（EACCES）' }
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'proxy-only')
+  assert.equal(c.proxyBadge.tone, 'ok')
+  assert.equal(c.directBadge.tone, 'bad')
+  assert.match(c.fix, /NO_PROXY/)
+})
+
+test('combineDualProbe: direct OK + proxy 403 → direct-only with WARN proxy badge (链路通·被拒绝, 不是被拦死)', () => {
+  const proxy = classifyProbeStatus(403)
+  const direct = classifyProbeStatus(200)
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'direct-only')
+  assert.equal(c.proxyBadge.tone, 'warn')
+  assert.match(c.proxyBadge.text, /被拒绝|链路通/)
+  assert.equal(c.directBadge.tone, 'ok')
+  // 403 是"到达目标被拒绝"，绝不能说是代理链路不通
+  assert.match(c.why, /到达目标|被拒绝/)
+  assert.match(c.fix, /NO_PROXY/)
+})
+
+test('combineDualProbe: proxy 407 + direct OK → direct-only-auth (do not fight NTLM)', () => {
+  const proxy = classifyProbeStatus(407)
+  const direct = classifyProbeStatus(200)
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'direct-only-auth')
+  assert.match(c.proxyBadge.text, /认证/)
+  assert.equal(c.proxyBadge.tone, 'bad')
+  assert.match(c.fix, /NO_PROXY/)
+})
+
+test('combineDualProbe: 核心回归——proxy 404 + direct EACCES → proxy-only, proxy 徽章为黄(链路通·路径不存在)', () => {
+  // 用户实测（2026-09-18）：api.copilot.tencent.com/api/v1 走代理 404、直连 EACCES，
+  // 旧逻辑误判 "代理与直连均失败(both-bad)"；正确是"只有走代理能到目标，目标 404=路径问题"。
+  const proxy = classifyProbeStatus(404)
+  const direct = { ok: false, verdict: 'unusable', kind: 'unreachable', short: '直连不可达（EACCES）—需要走代理' }
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'proxy-only')
+  assert.equal(c.proxyBadge.tone, 'warn')
+  assert.match(c.proxyBadge.text, /链路通/)
+  assert.match(c.proxyBadge.text, /路径不存在|拒绝/)
+  assert.equal(c.directBadge.tone, 'bad')
+  assert.match(c.short, /代理/)
+  assert.equal(c.why.includes('只有代理通道能到达'), true)
+})
+
+test('combineDualProbe: both degraded (404+404) → both-reached, 双黄徽章, 指路真实端点', () => {
+  const proxy = classifyProbeStatus(404)
+  const direct = classifyProbeStatus(404)
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'both-reached')
+  assert.equal(c.proxyBadge.tone, 'warn')
+  assert.equal(c.directBadge.tone, 'warn')
+  assert.match(c.fix, /models|chat\/completions|端点/)
+})
+
+test('combineDualProbe: both legs fail with connection errors → both-bad, both badges bad', () => {
+  const proxy = { ok: false, verdict: 'unusable', kind: 'unreachable', short: '连接被拒绝（ECONNREFUSED）' }
+  const direct = { ok: false, verdict: 'unusable', kind: 'unreachable', short: '超时前无应答（ETIMEDOUT）' }
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'both-bad')
+  assert.equal(c.proxyBadge.tone, 'bad')
+  assert.equal(c.directBadge.tone, 'bad')
+  assert.match(c.fix, /与代理开关无关/)
+})
+
+test('combineDualProbe: proxy 504 + direct timeout → both-bad 但代理徽章 warn(链路通·网关报错), 不是 red 链路不通', () => {
+  const proxy = classifyProbeStatus(504)
+  const direct = { ok: false, verdict: 'unusable', kind: 'unreachable', short: '超时前无应答（ETIMEDOUT）' }
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'both-bad')
+  assert.equal(c.proxyBadge.tone, 'warn')
+  assert.match(c.proxyBadge.text, /链路通|网关/)
+  assert.equal(c.directBadge.tone, 'bad')
+})
+
+test('combineDualProbe: proxy OK + direct 404 → proxy-only, 直连徽章 warn(链路通·路径不存在)', () => {
+  const proxy = classifyProbeStatus(200)
+  const direct = classifyProbeStatus(404)
+  const c = combineDualProbe(proxy, direct)
+  assert.equal(c.verdict, 'proxy-only')
+  assert.equal(c.proxyBadge.tone, 'ok')
+  assert.equal(c.directBadge.tone, 'warn')
+  assert.match(c.directBadge.text, /链路通/)
 })
