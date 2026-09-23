@@ -858,3 +858,48 @@ npmmirror sync 主动触发（201）→ npmmirror `latest=1.0.9` + tarball 200(6
 test profile `pnpm install` 装 1.0.9 → 双通道新逻辑在位置（dualBadge/both-reached）→
 腾讯 Copilot 场景复验：代理 🟡「链路通·目标拒绝」+ 直连 🔴 → 「只有走代理可达」（旧版误报
 双失败，修复后正确）。
+
+## 30. 官方双拼写是必要设计：子进程 env ≠ 主进程 env，别"优化"掉（2026-09-18 MCP 实测）
+
+**起因**：我们曾把官方 dsh-http-proxy 的 `applyPolicyEnv` / `proxyEnvironmentForChild`
+改成 Windows 只发布小写拼写（判断：Windows env 大小写不敏感，双拼写是"污染枚举的 bug"，
+PowerShell `env:` 枚举报「已添加了具有相同键的项」就是"证据"）。
+
+**判断错在两处**：
+1. **Node 的 `process.env` 区分大小写**（JS 对象属性查找）——"Windows env 大小写不敏感"
+   只对系统 API（GetEnvironmentVariable）成立。Node 子进程 env 是 JS 对象传给 spawn，
+   `process.env.HTTP_PROXY` 与 `process.env.http_proxy` 是**两个不同的键**。
+2. **只验证了主进程 env，没验证子进程 env**：当时实测主进程 env 双拼写齐全，就断言
+   "MCP 与单拼写无关"。但 **MCP 等子进程继承的不是主进程 env，而是官方库
+   `proxyEnvironmentForChild()` 生成的 overlay**——补丁把 overlay 改成只剩小写后：
+   npm/npx（及 obsidian MCP 的 Node 依赖）读大写 `HTTP_PROXY` → 拿不到代理 →
+   npx 拉包/服务器网络初始化失败 → **MCP 连不上**。
+
+**用户实测闭环（定案）**：补丁版重启 → MCP 断（`ws_mcp_call` 报「未连接或连接失败」）；
+还原官方双拼写再重启 → **MCP 恢复**。大小写判断错误被实测定案，无用 issue 已关闭。
+
+**教训**：
+- 官方成对发布（`http_proxy`/`HTTP_PROXY` 等）是**必要设计**：两条生态各读各的拼写，
+  少一条就会挂掉只读那一条的工具（尤其子进程）。
+- **查子进程环境问题：去看 spawn 的 env 来源（这里是 `proxyEnvironmentForChild` overlay），
+  不是主进程 process.env**。
+- PowerShell `env:` 枚举报「已添加了具有相同键的项」是 .NET 收集器对大小写键的显示冲突，
+  **无害**，不是"官方 bug"的证据。
+- 处置：官方库两处与插件 `proxyEnvMap` 已全部还原为官方默认双拼写；web/test 1.0.9
+  自始就是双拼写，从未含过单拼写。
+
+## 31. 标准发布流程（用户定案，2026-09-18 起执行）
+
+**开发 → test profile 验证 → 验证通过 → 提交远程 → 发包 → 淘宝强制同步 → 升级 web**
+
+1. **开发**：工作区源码（`D:\个人材料\Agent\dsh-workspace\dsh-proxy-pro`）改代码，测试全绿。
+2. **test profile 验证**：未发布前先把开发版接入 test（直接复制 lib 到
+   `~/.dsh/profiles/test/node_modules/@yanglaofish/dsh-proxy-pro/lib`，md5 核对），
+   用户实测功能/回归通过才算过。
+3. **验证通过 → 提交远程**：先 commit 当前工作区（消除 git 与 npm 的漂移——1.0.9 曾
+   出现发布树与 HEAD 不一致：单拼写被混进 commit 但从未发布），再 push。
+4. **发包**：显式 `--registry=https://registry.npmjs.org`，scoped `--access=public`，
+   `--replace-registry-host=never`；403/staged publishing 绕行见 §29。
+5. **淘宝强制同步**：publish 后**不等**，循环 PUT npmmirror sync + 轮询
+   dist-tags.latest 直到更新（铁律 §28）。
+6. **升级 web**：web profile `pnpm install` 装新版本，验收后结束。
