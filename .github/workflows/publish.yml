@@ -32,15 +32,20 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
+          # No registry-url here on purpose: with OIDC trusted publishing
+          # (npmjs package settings → Trusted publishers), npm publish needs
+          # no token. The optional step below writes NPM_TOKEN only when the
+          # secret exists (fallback path).
+      - name: Configure npm auth when NPM_TOKEN secret is set
+        if: ${{ secrets.NPM_TOKEN != '' }}
+        shell: bash
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > "$HOME/.npmrc"
 
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js && node --check lib/proxy-core.js && node --check lib/tool-schemas.js
 
       - name: Publish to npmjs
         run: npm publish --registry=https://registry.npmjs.org --access=public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       # 用户铁律（LESSONS §28）：publish 后不等，主动循环触发淘宝源同步。
       - name: Taobao mirror — active sync + poll dist-tags.latest
