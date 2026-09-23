@@ -36,10 +36,17 @@ jobs:
           # (npmjs package settings → Trusted publishers), npm publish needs
           # no token. The optional step below writes NPM_TOKEN only when the
           # secret exists (fallback path).
-      - name: Configure npm auth when NPM_TOKEN secret is set
-        if: ${{ secrets.NPM_TOKEN != '' }}
+      - name: Configure npm auth (NPM_TOKEN if set, else OIDC)
         shell: bash
-        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > "$HOME/.npmrc"
+        env:
+          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "$NPM_TOKEN_FROM_SECRET" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
+            echo "auth: NPM_TOKEN secret"
+          else
+            echo "auth: OIDC trusted publishing (npmjs Trusted Publishers must be configured)"
+          fi
 
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js && node --check lib/proxy-core.js && node --check lib/tool-schemas.js
