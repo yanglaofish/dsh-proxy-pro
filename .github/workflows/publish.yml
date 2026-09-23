@@ -8,11 +8,12 @@
 # step ④ becomes: git tag vX.Y.Z && git push origin vX.Y.Z → this workflow.
 #
 # Auth options:
-#   A) secret `NPM_TOKEN`: npmjs → Access Tokens → Granular, Read+Publish
-#      (this package only) → add as repo secret. Used below via NODE_AUTH_TOKEN.
-#   B) OIDC trusted publishing (recommended later): npmjs package settings →
-#      "Publish access" → connect yanglaofish/dsh-proxy-pro; then remove the
-#      env and `npm publish --provenance` uses the id-token (permissions below).
+#   A) repo secret `NPM` (name is arbitrary; workflow reads secrets.NPM):
+#      npmjs → Access Tokens → Granular, Read+Publish (this package only) →
+#      add as repo secret named NPM.
+#   B) OIDC trusted publishing: npmjs package settings → "Trusted publishers"
+#      → connect yanglaofish/dsh-proxy-pro (also needs the id-token permission
+#      declared below).
 name: Publish npm
 
 on:
@@ -36,14 +37,14 @@ jobs:
           # (npmjs package settings → Trusted publishers), npm publish needs
           # no token. The optional step below writes NPM_TOKEN only when the
           # secret exists (fallback path).
-      - name: Configure npm auth (NPM_TOKEN if set, else OIDC)
+      - name: Configure npm auth (NPM if set, else OIDC)
         shell: bash
         env:
-          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM }}
         run: |
           if [ -n "$NPM_TOKEN_FROM_SECRET" ]; then
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
-            echo "auth: NPM_TOKEN secret"
+            echo "auth: NPM secret"
           else
             echo "auth: OIDC trusted publishing (npmjs Trusted Publishers must be configured)"
           fi
