@@ -1105,3 +1105,35 @@ README.md / README.zh.md**，而且关键契约都写在里面：
 `cat` 抽出来读；`_asar_grep.mjs` 按字符串定位到具体包再读那一段。
 本会话早先可用的 `cordis-plugin-development` 技能当时已下线（调用报 unknown），
 所以**包内文档是这版内核唯一可靠的作者指南**。
+
+## 38. 写/移植插件的第一步：`cordis_inspect_*`（2026-10-08）
+
+**这是内核内置的权威契约查询能力**，比读 README 更精确、比逆向 lib 代码快一个数量级。
+`cordis_inspect_list` 列出全部 Provider，`cordis_inspect_query` 按 platform+provider+method 查：
+
+| platform | provider | method | 拿到什么 |
+| --- | --- | --- | --- |
+| host | Service | `listService` | 省略 `service` → 紧凑目录；给定 → **精确方法签名 + 引用类型声明** |
+| host | Event | `listEvents` | 省略 `event` → 事件目录（名称/mode/签名）；给定 → 单个事件契约 |
+| host | Config | `listConfigs` | 按 `name`/`entry` 查活条目目录或某条的**投影 JSON Schema**（volatile 一目了然） |
+| host | Tool | `listTools` | 当前 Agent 可调用的全部工具 schema |
+| client | Service / Event / Builtin / Slots / Theme | `listService` / `listEvents` / `listBuiltins` / `listSubTree` / `listTokens` | 客户端可注入服务、事件、可用内建符号、**实时槽位拓扑与注册契约**、主题 token |
+
+**这一轮用它验到的事实**（全部与本插件的改法对得上）：
+
+- `settings`：`configure(presentation, owner = this.ctx.fiber)`、`update(ns, patch, expectedRevision?)`、
+  `describe()`、`replace`、`mutate`；`ns` 明确是 **Profile entry id**。
+- `webServer.register({kind:'exact'|'prefix', path, handler})`；服务描述里写明
+  「启动期间未被认领的请求由 fallback 回 **404**，直到其 owner 注册」——正是我们那次 404 的机制。
+- **`loader/volatile-update` 不在 Event 目录里**（它是 cordis loader 的内部事件，只在本 fiber 上 emit）；
+  目录在册的是 **`settings/document-updated(ns, revision)`**（"One profile entry's form values,
+  availability, or page policy changed"）。两个都监听最稳，但**备案写法是后者**。
+- client 可注入服务目录（本组合）：`layout / locale / sessions / slots / theme / timer /
+  uiWorkspace / workspaces` —— **`settingsScope` 根本不存在**，`configForms` 也不在第三方可注入目录里。
+  所以"客户端只 inject `slots`、配置读写走插件自己的 HTTP API"是正确选择。
+- `Config` 目录里第三方条目形如 `{id: "include:dsh-mcp-manager", patchId: "dsh-mcp-manager"}`：
+  **entry id 是加载器条目 id（可能带 `include:` 前缀）**，所以要用 `ctx.fiber.entry?.options.id`
+  取，而不是自己拼包名。
+
+**顺序**：写/移植插件前 → `cordis_inspect_list` → 需要什么查什么（Service 签名 / Event 签名 /
+Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再猜。**
