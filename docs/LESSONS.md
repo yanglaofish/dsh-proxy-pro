@@ -1215,3 +1215,37 @@ Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再�
   该版本号不可复用。仅用于"根本没人可能装过"的事故版本。
 - 两者都可能要求 2FA：granular token 通常免 OTP；若被要求，把一次性码填进 `otp` 输入，
   或直接在 npmjs 网页（版本页 → Delete）操作。
+
+## 42. 脱离公司网时的发布/升级路径（2026-10-08 实测）
+
+**环境特征**（判断当前处在哪种网络，决定走哪条路）：
+
+| 探测 | 在公司网 | 脱离公司网（本轮实测） |
+| --- | --- | --- |
+| 系统代理 | 开（proxyhk 等） | **关**（`ProxyEnable=0`） |
+| 华为内网镜像 `mirrors.tools.huawei.com` | 通 | **ENOTFOUND** |
+| registry.npmjs.org / registry.npmmirror.com | 直连被 SWG 拦（§32） | **直连可达** |
+| github.com | 经代理可推 | 直连不稳（IWR 超时，但 `git push` 常能过） |
+
+**本轮实际路径（都能用，按可用性选）**：
+
+1. **发包**：本地直连 `npm publish --registry=https://registry.npmjs.org` → 返回
+   "Your package is being processed"（staged），**约 2 分钟后**才在 registry 可见——别以为失败，
+   要轮询 `dist-tags`/`versions` 确认。
+2. **淘宝同步**：手动 `PUT https://registry.npmmirror.com/-/sync?name=%40scope%2Fname` → 201。
+3. **deprecate**：本地可做；**unpublish 不行**——免 2FA 的 granular token 被 npm 拒绝
+   （`Granular access tokens that bypass two-factor authentication may not perform this action`），
+   删除只能走网页 2FA 或带 OTP 的会话。
+4. **profile 升级**：内网镜像不可达时必须显式换源——
+   `pnpm add '<pkg>@<ver>' --registry=https://registry.npmmirror.com`；
+   `plugin_manager install_bundle` 同样支持 `registry` 入参（用它还能顺手把 bundles 组合改对）。
+5. **CI 仍可用**：tag 推上去即可；发布步骤已做成幂等（版本已存在就跳过），
+   所以"先本地发、后补 tag"不会报红。
+
+**验证工具（本轮新增，可复用）**：
+
+- `_core_probe/scan-mojibake.mjs`——ASCII 源码（`\u` 转义）+ 按**相对路径**跳过 node_modules，
+  扫真实乱码；注意 PowerShell 里传 CJK 正则本身可能被编码破坏，**别用它做乱码探测**。
+- `_core_probe/scan-workflows.mjs`——现成捕获"未加引号的 `: ` 值"这类会让 GitHub
+  **在零 job 层面拒掉整个 workflow 文件**的错误（现象：出现以文件名为名的失败 run）。
+- 读文件一律用 `read` 工具或 Node `readFileSync(..., 'utf8')`；`Get-Content` 的显示不等于文件内容。
