@@ -61,7 +61,10 @@ jobs:
         run: |
           VER="${GITHUB_REF_NAME#v}"
           echo "target=$VER"
-          curl -sS -X PUT "https://registry.npmmirror.com/-/sync/@yanglaofish%2Fdsh-proxy-pro" -o /tmp/sync.json -w 'sync trigger http=%{http_code}\n' || true
+          # npmmirror's sync API takes the package name as a QUERY parameter;
+          # the path form (/-/sync/@scope%2Fname) answers 404 (LESSONS §34).
+          curl -sS -X PUT "https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-proxy-pro" -o /tmp/sync.json -w 'sync trigger http=%{http_code}\n' || true
+          cat /tmp/sync.json 2>/dev/null || true
           for i in $(seq 1 30); do
             LATEST=$(curl -sS "https://registry.npmmirror.com/@yanglaofish%2Fdsh-proxy-pro" \
               | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d)['dist-tags']?.latest||'')}catch{console.log('')}})" 2>/dev/null || echo '')

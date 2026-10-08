@@ -992,3 +992,24 @@ PowerShell `env:` 枚举报「已添加了具有相同键的项」就是"证据"
 **排查手法（可复用）**：内核打包在 `…\DeepSeek Harness\resources\app.asar` 里，
 PowerShell 读不到；用 asar 头解析脚本（`_asar_probe.mjs` / `_asar_grep.mjs`）列文件、
 按路径取文件、全库 grep 字符串，再顺着 `dsh-app-boot` → 兼容判定看真相。
+
+## 34. 发布后运维：淘宝同步端点 + profile 装包通道（2026-10-08）
+
+**淘宝主动同步（铁律 §28 的正确端点）**：
+
+- ✅ 可用：`PUT https://registry.npmmirror.com/-/sync?name=%40scope%2Fname` → `201 {"ok":true,…}`
+- ❌ 旧写法失效：`PUT https://registry.npmmirror.com/-/sync/@scope%2fname` → **404**；
+  `https://npmmirror.com/sync/@scope/name` → 405。workflow 里的同步步骤已按此改正
+  （此前 `|| true` 吞掉了 404，实际靠 npmmirror 懒同步兜底，属于"看起来同步了"的假象）。
+
+**profile 装包通道（升级 web/test/desktop 时）**：
+
+- profile 的 pnpm registry 是**华为内网镜像** `http://mirrors.tools.huawei.com/npm/`，
+  它对新版本有滞后：publish 完立刻 `pnpm add pkg@新版本` 会报
+  "The latest release of … is <旧版本>"，甚至 `--force` 也无法绕过（元数据是镜像给的）。
+- pnpm **直连** npmmirror / npmjs 报 `EACCES`（不走系统代理，被网络策略挡住）。
+- ✅ 解法：给 pnpm 挂上公司代理 + 显式淘宝 registry——
+  `$env:HTTP_PROXY=$env:HTTPS_PROXY='http://proxyhk.huawei.com:8080'` 然后
+  `pnpm add 'pkg@版本' --registry=https://registry.npmmirror.com`。
+- `pnpm cache delete <pkg>` 会列出/删除三份元数据缓存（huawei / npmjs / npmmirror），
+  可先用它排除缓存干扰。
