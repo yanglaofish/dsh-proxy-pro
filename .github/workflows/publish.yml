@@ -52,7 +52,7 @@ jobs:
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js && node --check lib/proxy-core.js && node --check lib/tool-schemas.js
 
-      - name: Publish to npmjs (idempotent: skips an already-published version)
+      - name: Publish to npmjs (idempotent — skips an already-published version)
         shell: bash
         run: |
           VER="$(node -p "require('./package.json').version")"
