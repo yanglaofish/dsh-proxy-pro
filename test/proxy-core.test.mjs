@@ -9,6 +9,9 @@ import {
   classifyTargetFailure,
   combineDualProbe,
   composeNoProxy,
+  configPayload,
+  DEFAULT_ENTRY_ID,
+  discoverEntryId,
   headNeedsGetRetry,
   keepaliveHint,
   makeSystemProxyReader,
@@ -17,10 +20,71 @@ import {
   parseProxyServer,
   parseRegDword,
   parseRegString,
+  readEntryConfig,
   resolveProxyState,
   summarize,
   systemFactsEqual,
 } from '../lib/proxy-core.js'
+
+// ---- dsh 0.2 settings model (LESSONS §33): entry id = settings namespace ----
+
+/** Minimal stand-in for the cordis context identity used by discovery. */
+const fakeFiber = { uid: 'self' }
+
+function fakeConfigEditor(rows) {
+  return { configuration: () => rows }
+}
+
+test('discoverEntryId prefers the row whose fiber is this context', () => {
+  const rows = [
+    { entry: { fiber: { uid: 'other' }, options: { id: 'someone-else' } }, override: {} },
+    { entry: { fiber: fakeFiber, options: { id: 'dsh-proxy-pro' } }, override: {} },
+  ]
+  assert.equal(discoverEntryId(fakeConfigEditor(rows), { fiber: fakeFiber }), 'dsh-proxy-pro')
+})
+
+test('discoverEntryId falls back to the bundle row id and survives a broken editor', () => {
+  const rows = [{ entry: { options: { id: DEFAULT_ENTRY_ID } }, override: {} }]
+  assert.equal(discoverEntryId(fakeConfigEditor(rows), {}), DEFAULT_ENTRY_ID)
+  assert.equal(discoverEntryId(undefined, {}), undefined)
+  assert.equal(discoverEntryId({ configuration: () => { throw new Error('boom') } }, {}), undefined)
+})
+
+test('readEntryConfig merges composed layers then the profile patch over the fallback', () => {
+  const rows = [{
+    entry: { options: { id: 'dsh-proxy-pro' } },
+    inherited: { enabled: true, mode: 'custom', customUrl: 'http://a:1' },
+    override: { customUrl: 'http://b:2', noProxy: 'example.com' },
+  }]
+  const config = readEntryConfig(fakeConfigEditor(rows), 'dsh-proxy-pro', { enabled: false, mode: 'system', systemPollMs: 30000 })
+  assert.deepEqual(config, {
+    enabled: true,
+    mode: 'custom',
+    customUrl: 'http://b:2',
+    noProxy: 'example.com',
+    systemPollMs: 30000,
+  })
+})
+
+test('readEntryConfig keeps the apply-time config when the entry is absent', () => {
+  const fallback = { enabled: false, mode: 'system', customUrl: '', noProxy: '', systemPollMs: 30000 }
+  assert.equal(readEntryConfig(fakeConfigEditor([]), 'dsh-proxy-pro', fallback), fallback)
+})
+
+test('configPayload shapes the client panel payload and never leaks extra fields', () => {
+  const payload = configPayload({ enabled: true, mode: 'custom', customUrl: 'http://127.0.0.1:7890', noProxy: 'a,b', systemPollMs: 5000, secret: 'nope' })
+  assert.deepEqual(payload, {
+    config: { enabled: true, mode: 'custom', customUrl: 'http://127.0.0.1:7890', noProxy: 'a,b', systemPollMs: 5000 },
+    writable: true,
+  })
+  // Schema-validated booleans only: a truthy non-boolean must not switch the UI on.
+  assert.equal(configPayload({ enabled: 1 }).config.enabled, false)
+  assert.deepEqual(configPayload(undefined), {
+    config: { enabled: false, mode: 'none', customUrl: '', noProxy: '', systemPollMs: 0 },
+    writable: true,
+  })
+})
+
 
 test('normalizeProxyUrl accepts bare host:port and http(s) URLs', () => {
   assert.equal(normalizeProxyUrl('127.0.0.1:7890'), 'http://127.0.0.1:7890')

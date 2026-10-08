@@ -932,3 +932,63 @@ PowerShell `env:` 枚举报「已添加了具有相同键的项」就是"证据"
   （`git tag -d && git push origin --delete <tag> && git tag && git push`），否则 run 用旧代码。
 - npm publish 若撞 staged publishing（202）需在 npmjs 网页/`npm stage approve` 做 2FA 批准；
   granular/automation token 通常直接发布。
+
+## 33. dsh 0.2.0-rc.2 非兼容升级：插件被静默跳过（2026-10-08）
+
+**背景**：DSH 桌面端换成新的 DeepSeek Harness（内核 `@deepseek-ai/*` 从 `0.1.5-rc.2`
+升到 `0.2.0-rc.2`）。升级后本插件**在插件清单里彻底消失**（连禁用项都没有），
+`proxy_*` 工具、头部胶囊、设置页全没了——但**没有任何构建/加载报错**。
+
+**三个非兼容点（按危害排序）**：
+
+1. **peer 范围把整个 bundle 判死（静默跳过）**。
+   `@deepseek-ai/dsh-app-boot` 的 `evaluatePluginCompatibility()` 会把 manifest 里每个
+   `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` peerDependency **与运行版本**（= 该
+   `dsh-app-boot` 包自己的 version）做 `semver.satisfies(..., {includePrerelease:true})`；
+   只要一个不满足，**该 bundle 在启动时被跳过**（`Unreadable bundles, and bundles whose own
+   dsh peers the profile does not exempt, are skipped`），只留一条 warning 文案。
+   我们写的是 `^0.1.5-rc.2`（caret 在 0.x 只允许同 minor）→ 不满足 0.2.0-rc.2 → 插件被丢。
+   - 只有 **`@deepseek-ai/dsh*`** 名字会被检查（`@deepseek-ai/cordis`、`schemastery` 不查）。
+   - `workspace:^`/`~`/`*` 视为"当前运行时"；空串/非法范围同样判不兼容。
+   - 处置：宽范围 `">=0.1.5-rc.2 <0.3.0"`（代码两代 API 都兼容）。
+   - 参考：`dsh-skill-manager` 干脆**不声明任何 peerDependencies**，所以在同一内核下照常 active。
+
+2. **宿主设置服务换模型**：`dsh-settings` 的 `SettingsForms` 服务（name = `settings`）
+   **不再有 `register()` / `watch()`**。0.2 里**插件自己的 composition entry 就是设置表单**：
+   namespace = **entry id**，schema = 插件自己的 `Config`，写入走
+   `settings.update(entryId, patch)`（还有 `replace`/`mutate`，都带 `expectedRevision`），
+   每次提交 emit `settings/document-updated`（参数 = entry id）。entry id 可从
+   `configEditor.configuration()` 的行里按 `row.entry.fiber === ctx.fiber`（或按已知 id）反查。
+   - 旧代码 `settings.register(PROXY_NS, Config, {base})` 会走 guard 静默降级成"只读"，
+     **不会崩但设置改不动**，必须显式迁移。
+
+3. **浏览器侧 `ctx.settingsScope` 被删除**（新内核里该字符串 0 命中）。
+   新客户端用 `configForms` 服务（`ctx.get('configForms')`，`get(entryId)` /
+   `whileServed([ns], register)`）配 `ctx.remote.settings.mutate(ns, ops, revision)`。
+   我们的客户端 `exports.inject` 里写着 `settingsScope`——cordis 的 inject 等服务不存在
+   **会让客户端半边永久 pending**（§6 的翻版），所以必须删掉。
+   - 处置（本次采用）：客户端不再依赖任何设置传输，改成走**插件自己的 HTTP API**
+     （`GET/POST /dsh-proxy-pro/api/config`，宿主再经 settings 服务落盘）。
+     好处：UI 与内核设置 API 解耦，旧/新内核都能跑。
+   - 槽位没变：`settings.section`、`conversation.session.header.utilities` 仍在，
+     `label` 经 `resolveSlotLabel()` 解析（字符串可用）。
+
+**没有被改动的部分（别再白改）**：
+- `@deepseek-ai/dsh-tools` 的 `defineTool` 与作者 schema DSL **语义未变**：
+  parameter map 与 output value schema 仍支持**逐属性 `required: true` 标记**，
+  仍要求 object 节点显式 `additionalProperties: boolean`，只允许
+  `type/oneOf/properties/required/additionalProperties/items/enum/const`+注解。
+  （output 走 `valueSchemaSpecToJsonSchema`：根节点 `allowRequired:false`，
+  属性节点 `allowRequired:true`——我们把 `required` 写在属性上，正确。）
+- `@deepseek-ai/dsh-http-proxy` 0.2 仍导出 `installProxyFromEnvironment(env, report)`、
+  `proxyRouteFor`（返回 `{proxied:false}` 或 `{proxied:true, proxy, dispatcher}`）、
+  `proxyEnvironmentForChild()`、`clearedProxyEnv()`；`POLICY_ENV_NAMES` 仍是**双拼写**。
+
+**护栏**：`test/manifest-compat.test.mjs`——断言每个 `@deepseek-ai/dsh*` peer 范围覆盖
+受支持的运行时世代（`0.1.5-rc.2`、`0.2.0-rc.2`），并断言客户端不再 inject `settingsScope`、
+不再 bind 设置 scope。**这类"静默跳过"只有靠清单级测试才能提前发现**——单元测试全绿
+也照样会被内核丢掉。
+
+**排查手法（可复用）**：内核打包在 `…\DeepSeek Harness\resources\app.asar` 里，
+PowerShell 读不到；用 asar 头解析脚本（`_asar_probe.mjs` / `_asar_grep.mjs`）列文件、
+按路径取文件、全库 grep 字符串，再顺着 `dsh-app-boot` → 兼容判定看真相。
