@@ -11,7 +11,6 @@ import {
   composeNoProxy,
   configPayload,
   DEFAULT_ENTRY_ID,
-  discoverEntryId,
   headNeedsGetRetry,
   keepaliveHint,
   makeSystemProxyReader,
@@ -20,55 +19,75 @@ import {
   parseProxyServer,
   parseRegDword,
   parseRegString,
-  readEntryConfig,
+  readConfigField,
+  readProxyConfig,
+  resolveEntryId,
   resolveProxyState,
   summarize,
   systemFactsEqual,
 } from '../lib/proxy-core.js'
 
-// ---- dsh 0.2 settings model (LESSONS §33): entry id = settings namespace ----
+// ---- dsh 0.2 settings model (LESSONS §33/§36) ----------------------------
 
-/** Minimal stand-in for the cordis context identity used by discovery. */
-const fakeFiber = { uid: 'self' }
+/** Minimal stand-in for the cordis context identity used by entry-id resolution. */
+const fakeFiber = { uid: 'self', entry: { options: { id: 'dsh-proxy-pro' } } }
 
 function fakeConfigEditor(rows) {
   return { configuration: () => rows }
 }
 
-test('discoverEntryId prefers the row whose fiber is this context', () => {
-  const rows = [
-    { entry: { fiber: { uid: 'other' }, options: { id: 'someone-else' } }, override: {} },
-    { entry: { fiber: fakeFiber, options: { id: 'dsh-proxy-pro' } }, override: {} },
-  ]
-  assert.equal(discoverEntryId(fakeConfigEditor(rows), { fiber: fakeFiber }), 'dsh-proxy-pro')
+/** A resolved volatile field, as cordis hands it to the plugin. */
+function volatileRef(value) {
+  return { get: () => value }
+}
+
+test('resolveEntryId prefers the fiber entry id (documented core idiom)', () => {
+  assert.equal(resolveEntryId({ fiber: fakeFiber }, undefined), 'dsh-proxy-pro')
 })
 
-test('discoverEntryId falls back to the bundle row id and survives a broken editor', () => {
-  const rows = [{ entry: { options: { id: DEFAULT_ENTRY_ID } }, override: {} }]
-  assert.equal(discoverEntryId(fakeConfigEditor(rows), {}), DEFAULT_ENTRY_ID)
-  assert.equal(discoverEntryId(undefined, {}), undefined)
-  assert.equal(discoverEntryId({ configuration: () => { throw new Error('boom') } }, {}), undefined)
+test('resolveEntryId falls back to the config-editor row, then the bundle id', () => {
+  const ctx = { fiber: { uid: 'self' } } // no entry on the fiber
+  const rows = [{ entry: { fiber: ctx.fiber, options: { id: 'custom-row' } }, override: {} }]
+  assert.equal(resolveEntryId(ctx, fakeConfigEditor(rows)), 'custom-row')
+  assert.equal(resolveEntryId(ctx, fakeConfigEditor([])), DEFAULT_ENTRY_ID)
+  assert.equal(resolveEntryId({}, undefined), DEFAULT_ENTRY_ID)
+  assert.equal(resolveEntryId({}, { configuration: () => { throw new Error('boom') } }), DEFAULT_ENTRY_ID)
 })
 
-test('readEntryConfig merges composed layers then the profile patch over the fallback', () => {
-  const rows = [{
-    entry: { options: { id: 'dsh-proxy-pro' } },
-    inherited: { enabled: true, mode: 'custom', customUrl: 'http://a:1' },
-    override: { customUrl: 'http://b:2', noProxy: 'example.com' },
-  }]
-  const config = readEntryConfig(fakeConfigEditor(rows), 'dsh-proxy-pro', { enabled: false, mode: 'system', systemPollMs: 30000 })
-  assert.deepEqual(config, {
+test('readConfigField reads Volatile references through .get()', () => {
+  assert.equal(readConfigField({ enabled: volatileRef(true) }, 'enabled', false), true)
+  assert.equal(readConfigField({ enabled: volatileRef(false) }, 'enabled', true), false)
+  // A throwing reference never takes the plugin down.
+  assert.equal(readConfigField({ enabled: { get() { throw new Error('gone') } } }, 'enabled', 'fallback'), 'fallback')
+})
+
+test('readConfigField also accepts plain values (older cores / unmarked schemas)', () => {
+  assert.equal(readConfigField({ enabled: true }, 'enabled', false), true)
+  assert.equal(readConfigField({ systemPollMs: 5000 }, 'systemPollMs', 30000), 5000)
+  assert.equal(readConfigField({}, 'mode', 'none'), 'none')
+})
+
+test('readProxyConfig yields the plain config the tools/client/API consume', () => {
+  const live = {
+    enabled: volatileRef(true),
+    mode: volatileRef('custom'),
+    customUrl: volatileRef('http://127.0.0.1:7890'),
+    noProxy: volatileRef('a,b'),
+    systemPollMs: 30000,
+  }
+  assert.deepEqual(readProxyConfig(live), {
     enabled: true,
     mode: 'custom',
-    customUrl: 'http://b:2',
-    noProxy: 'example.com',
+    customUrl: 'http://127.0.0.1:7890',
+    noProxy: 'a,b',
     systemPollMs: 30000,
   })
-})
-
-test('readEntryConfig keeps the apply-time config when the entry is absent', () => {
-  const fallback = { enabled: false, mode: 'system', customUrl: '', noProxy: '', systemPollMs: 30000 }
-  assert.equal(readEntryConfig(fakeConfigEditor([]), 'dsh-proxy-pro', fallback), fallback)
+  // Volatile refs are re-read on every call: a Loader commit is visible at once.
+  let flag = false
+  const changing = { enabled: { get: () => flag } }
+  assert.equal(readProxyConfig(changing).enabled, false)
+  flag = true
+  assert.equal(readProxyConfig(changing).enabled, true)
 })
 
 test('configPayload shapes the client panel payload and never leaks extra fields', () => {

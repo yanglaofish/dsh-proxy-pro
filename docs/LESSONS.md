@@ -1042,3 +1042,66 @@ registerApi(ctx.get('webServer'))   // 旧内核：apply 时服务已在
 
 **可复用教训**：0.2 里凡"我 apply 时它还没挂"的服务，都改用 `ctx.inject([...], cb)`；
 以及**静默跳过是最贵的失败模式**——拿不到依赖时要留日志。
+
+## 36. 设置字段必须 `.volatile()`，否则"点一下开启马上弹回"（2026-10-08）
+
+**现象**：面板能读（GET /config → 200，`enabled:false`），但点开关立刻弹回关闭。
+直接打接口拿到真话：
+
+```json
+POST /dsh-proxy-pro/api/config {"enabled":true}
+503 {"ok":false,"error":"Plugin entry \"dsh-proxy-pro\" has no volatile fields"}
+```
+
+**根因**：dsh 0.2 的 `dsh-settings` 只允许写**声明为 volatile 的字段**——
+`volatileForm(schema)` 要求节点带 `meta.volatile`，`isVolatilePath(schema, path)` 逐级校验；
+我们原来的 `Config` 一个字段都没标 → 任何写入都被拒。前端拿到失败后回滚乐观值，
+看起来就像"UI 坏了"。
+
+**解法**（文档与内核一致）：
+
+```js
+const volatile = (field) => (typeof field?.volatile === 'function' ? field.volatile() : field)
+const Config = z.object({
+  enabled: volatile(z.boolean().default(false)),
+  mode: volatile(z.union([...]).default('system')),
+  customUrl: volatile(z.string().default('http://127.0.0.1:7890')),
+  noProxy: volatile(z.string().default('localhost,127.0.0.1,::1')),
+  systemPollMs: z.number().default(30000).min(0),   // 只在 apply 时读，故意不标
+})
+```
+
+配套（文档给的契约，`cordis` README「Volatile configuration」+ `dsh-settings` README）：
+
+- 解析后的 volatile 字段是 **`Volatile<T>` 引用**，live 值用 **`.get()`** 读
+  （内核实例：`this.config.enabled.get()`）；旧内核/未标注时是普通值，两种都要能吃。
+- 仅 volatile 的改动由 Loader **就地提交**并用 **`loader/volatile-update`** 通知本 fiber
+  （`ctx.on('loader/volatile-update', …)`）——不需要重启、也不会重新 apply。
+- entry id（= 设置命名空间）直接读 **`ctx.fiber.entry?.options.id`**
+  （内核实例：dsh-experimental-speech-to-text），不必去 configEditor 里扫。
+- **自带设置页**的插件要在 `ctx.inject(['settings'], child => …)` 里
+  `configure({ auto: false }, ctx.fiber)`，否则会多出一个自动生成的表单。
+- **前端不许静默回滚**：把宿主的错误原文显示出来（本次就是靠它一句话定位）。
+
+**验证手法（不重启内核也能验）**：把 asar 里的 `schemastery`/`cosmokit` 抽到
+工作区 node_modules，给 `dsh-tools`/`dsh-http-proxy` 建桩，然后 import 插件真实模块，
+用内核同款 `volatileForm`/`isVolatilePath` 逻辑断言（`_core_probe/verify-config.mjs`），
+结果必须 PASS——比"重启了看看"快得多。
+
+## 37. 流程教训：先读包内 README，再逆向代码（2026-10-08）
+
+这一轮我一直在 asar 里逆向 lib 代码推规则，绕了远路。其实**每个 `@deepseek-ai` 包都带
+README.md / README.zh.md**，而且关键契约都写在里面：
+
+- `dsh-app-boot/README.md`：peer 兼容判定（"Before a profile imports a plugin, DSH checks
+  its peerDependencies on @deepseek-ai/dsh and @deepseek-ai/dsh-* against the single runtime
+  version returned by getDshRuntimeVersion()… missing DSH peers impose no constraint;
+  invalid ranges are incompatible"）、denied row/bundle 行为、`compatibility.json` 豁免。
+- `cordis/README.md`：volatile 引用契约（`.get()` + `loader/volatile-update`）。
+- `dsh-settings/README.md`：「字段必须 `.volatile()`」「表单按 profile entry id 识别」
+  「业务插件直接读自己的 Config 引用」「自带页面 `configure({auto:false})`」。
+
+**做法**：`node _asar_probe.mjs <app.asar> list 'README\.md$'` 找文档 →
+`cat` 抽出来读；`_asar_grep.mjs` 按字符串定位到具体包再读那一段。
+本会话早先可用的 `cordis-plugin-development` 技能当时已下线（调用报 unknown），
+所以**包内文档是这版内核唯一可靠的作者指南**。

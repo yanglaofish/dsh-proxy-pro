@@ -116,3 +116,20 @@ test('the client talks to the host config API instead of the settings transport'
   assert.ok(/fetchJson\("\/config"/.test(clientSource), 'client.js must read the host /config endpoint')
   assert.ok(/createProxyStore/.test(clientSource), 'client.js must build the host-backed config store')
 })
+
+test('every settings-write field is declared volatile (dsh 0.2 refuses unmarked writes)', () => {
+  // dsh-settings' volatileForm()/isVolatilePath() only accept a write whose
+  // paths sit under a field whose schema node carries meta.volatile; without
+  // it the host answers `Plugin entry "…" has no volatile fields` and every
+  // toggle bounces straight back (LESSONS §36).
+  const hostSource = readFileSync(path.join(root, 'lib', 'index.js'), 'utf8')
+  const written = ['enabled', 'mode', 'customUrl', 'noProxy']
+  for (const field of written) {
+    assert.ok(
+      new RegExp(`${field}: volatile\\(`).test(hostSource),
+      `Config field "${field}" is written by the API/tools but is not marked volatile()`
+    )
+  }
+  // systemPollMs is read once at apply time, so it must NOT promise a live edit.
+  assert.ok(!/systemPollMs: volatile\(/.test(hostSource), 'systemPollMs must stay a composition-only knob')
+})
