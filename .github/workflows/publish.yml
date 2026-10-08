@@ -55,6 +55,30 @@ jobs:
       - name: Publish to npmjs
         run: npm publish --registry=https://registry.npmjs.org --access=public
 
+      # ONE-SHOT legacy cleanup, scoped to this tag: 1.1.0 was the failed
+      # intermediate release (peer widening only — missing the dsh 0.2
+      # settings/volatile/webServer fixes). Try to remove it (npm allows
+      # unpublish within 72h when nothing depends on it) and fall back to
+      # deprecating it, which is npm's recommended remedy. Delete this step
+      # once 2.0.1 is out; ad-hoc admin stays in npm-admin.yml (LESSONS §41).
+      - name: Retire the broken 1.1.0 (unpublish, else deprecate)
+        if: github.ref_name == 'v2.0.1'
+        shell: bash
+        run: |
+          set +e
+          LEGACY='@yanglaofish/dsh-proxy-pro@1.1.0'
+          MSG='broken release: published without the dsh 0.2 settings/volatile/webServer fixes — use 2.0.1 or newer'
+          echo "--- attempting unpublish ${LEGACY} ---"
+          if npm unpublish "$LEGACY" 2>&1 | tee /tmp/unpublish.log; then
+            echo "RESULT: unpublish reported success"
+          else
+            echo "RESULT: unpublish refused — falling back to deprecate"
+            npm deprecate "$LEGACY" "$MSG" 2>&1 | tee /tmp/deprecate.log
+          fi
+          echo "--- package state afterwards ---"
+          npm view '@yanglaofish/dsh-proxy-pro' dist-tags versions --json 2>&1 | tail -30
+          exit 0
+
       # 用户铁律（LESSONS §28）：publish 后不等，主动循环触发淘宝源同步。
       - name: Taobao mirror — active sync + poll dist-tags.latest
         shell: bash
