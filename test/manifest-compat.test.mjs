@@ -117,8 +117,7 @@ test('the client talks to the host config API instead of the settings transport'
   assert.ok(/createProxyStore/.test(clientSource), 'client.js must build the host-backed config store')
 })
 
-test('every settings-write field is declared volatile (dsh 0.2 refuses unmarked writes)', () => {
-  // dsh-settings' volatileForm()/isVolatilePath() only accept a write whose
+test('every settings-write field is declared volatile (dsh 0.2 refuses unmarked writes)', () => {  // dsh-settings' volatileForm()/isVolatilePath() only accept a write whose
   // paths sit under a field whose schema node carries meta.volatile; without
   // it the host answers `Plugin entry "…" has no volatile fields` and every
   // toggle bounces straight back (LESSONS §36).
@@ -132,4 +131,21 @@ test('every settings-write field is declared volatile (dsh 0.2 refuses unmarked 
   }
   // systemPollMs is read once at apply time, so it must NOT promise a live edit.
   assert.ok(!/systemPollMs: volatile\(/.test(hostSource), 'systemPollMs must stay a composition-only knob')
+})
+
+test('the client store never refreshes from inside subscribe (render-loop guard)', () => {
+  // Review fix (LESSONS §40): subscribe was an inline closure recreated every
+  // render, so React re-subscribed on every render, each resubscribe fetched
+  // /config, each response emitted a fresh snapshot, and the two fed each
+  // other — a GET /config per render. Keeping the fetch in an effect with
+  // identity-stable callbacks is what breaks that cycle.
+  const subscribeBody = /subscribe:\s*function\s*\(fn\)\s*\{([\s\S]{0,200}?)\n\s*\},/.exec(clientSource)
+  assert.ok(subscribeBody !== null, 'client.js must expose store.subscribe')
+  assert.ok(!/refresh\(\)/.test(subscribeBody[1]), 'store.subscribe must not trigger a refresh')
+  assert.ok(
+    /useEffect\(function \(\) \{ store\.refresh\(\); \}, \[store\]\)/.test(clientSource),
+    'the initial load must live in a mount effect'
+  )
+  assert.ok(/useCallback\(function \(onChange\)/.test(clientSource), 'subscribe must be identity-stable (useCallback)')
+  assert.ok(/unchanged\(snapshot, next\)/.test(clientSource), 'an unchanged payload must not notify subscribers')
 })

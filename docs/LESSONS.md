@@ -1159,3 +1159,33 @@ Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再�
 **顺带记住的排查手法**：页面自相矛盾时，先打宿主接口拿真值
 （`GET /config`）+ 看落盘文件（profile `cordis.patch.yml` 的 mtime 与内容），
 就能立刻区分"写没成功"和"前端状态不一致"——这次一查就知道**写入早就成功了**。
+
+## 40. 自查（code-review）抓到的问题 + 编码红线（2026-10-08）
+
+**🔴 渲染风暴（真 bug，会一直打接口）**：`useProxySettings` 把
+`store.refresh()` 写在 `subscribe` 回调里，而 subscribe 是**每次渲染新建的闭包**：
+渲染 → React 因 identity 变化重订阅 → subscribe 里 fetch `/config` → 响应 emit 新快照对象
+→ 再渲染 → 无限循环（每轮一次 HTTP 请求）。
+
+修法三条一起上：
+1. `subscribe`/`getSnapshot` 用 **`useCallback`** 固定 identity（依赖 `[store]`）；
+2. **首次加载挪到 `useEffect(() => { store.refresh() }, [store])`**，subscribe 只负责订阅；
+3. store 的 `emit()` 加**同值短路**（比较 status/writable/error/JSON.stringify(value)），
+   值没变就不通知——订阅者不该因为"又读了一遍同样的数据"而重渲染。
+
+**🟢 语义修正**：`configPayload(resolved, writable)` 增加可写标志，由宿主按
+「有 settings 服务且能 update/register」计算；只读 composition 不该在面板上给出可点的开关
+（点了必然 503）。
+
+**🔴 编码红线（我自己犯的）**：用 PowerShell `Get-Content -Raw | Set-Content` 回写
+`lib/index.js` 时，中文与破折号被读成系统代码页再以 UTF-8 写回，**全文变乱码**（`鈥?`）——
+与 §29 的 `Out-File` BOM 坑同源。
+
+- **规则：源码文件只用 `edit`/`write` 工具改；绝不用 shell 命令做文本往返。**
+- 需要批量替换时，先 `git status` 记住改动，出事后 `git checkout -- <file>` 回滚再用 edit 重做
+  （本次就是这么恢复的，回滚前先确认坏文件没有未提交的独有改动）。
+- 事后用乱码特征串（`鈥|锛|鐨|涓|鏄`）全仓扫一遍确认干净。
+
+**护栏**：`test/manifest-compat.test.mjs` 新增
+「the client store never refreshes from inside subscribe」——静态断言 subscribe 体内无
+`refresh()`、首刷在 `useEffect`、`useCallback` 存在、`emit` 有同值短路。

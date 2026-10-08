@@ -98,6 +98,8 @@ test('configPayload shapes the client panel payload and never leaks extra fields
   })
   // Schema-validated booleans only: a truthy non-boolean must not switch the UI on.
   assert.equal(configPayload({ enabled: 1 }).config.enabled, false)
+  // A composition that cannot persist must not offer enabled controls.
+  assert.equal(configPayload({ enabled: true }, false).writable, false)
   assert.deepEqual(configPayload(undefined), {
     config: { enabled: false, mode: 'none', customUrl: '', noProxy: '', systemPollMs: 0 },
     writable: true,
