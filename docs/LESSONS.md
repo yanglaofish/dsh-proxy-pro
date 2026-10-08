@@ -1137,3 +1137,25 @@ README.md / README.zh.md**，而且关键契约都写在里面：
 
 **顺序**：写/移植插件前 → `cordis_inspect_list` → 需要什么查什么（Service 签名 / Event 签名 /
 Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再猜。**
+
+## 39. 客户端的两个贡献点必须在同一份状态上（2026-10-08）
+
+**现象**：写入已经成功（POST /config → 200，profile patch 文件也被改写），但**头部胶囊显示
+「代理 · ON」而设置面板显示「代理未启用」**——同一时刻、同一页面，两处结论相反。
+
+**两个独立原因，都要治**：
+
+1. **状态被复制**：胶囊注册在 `conversation.session.header.utilities`，面板注册在
+   `settings.section`——**设置外壳自己渲染一个 React root**，两棵树。原先 `apply()` 里
+   `createProxyStore()` 每次 apply 建一份 store，于是两棵树各看各的快照。
+   → 改为**模块级单例**（`proxyStore()` 惰性创建一份），所有贡献点共用同一状态。
+   **通用规则**：客户端半边的状态 store 一律做成模块级单例，不要放在 `apply()` 里。
+2. **乐观值卡死**：胶囊点击后置 `optimistic=next`，原逻辑只在
+   `settings.value.enabled === optimistic` 时才清除——**宿主拒写时这个条件永远不成立，
+   胶囊就永久停在 ON**。
+   → 改为**写完就结算**：`store.setEnabled(next).then(清乐观, 清乐观)`，
+   成功与否都以宿主答复为准（失败回滚 + 面板显示错误原文）。
+
+**顺带记住的排查手法**：页面自相矛盾时，先打宿主接口拿真值
+（`GET /config`）+ 看落盘文件（profile `cordis.patch.yml` 的 mtime 与内容），
+就能立刻区分"写没成功"和"前端状态不一致"——这次一查就知道**写入早就成功了**。
