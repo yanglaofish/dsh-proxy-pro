@@ -1013,3 +1013,32 @@ PowerShell 读不到；用 asar 头解析脚本（`_asar_probe.mjs` / `_asar_gre
   `pnpm add 'pkg@版本' --registry=https://registry.npmmirror.com`。
 - `pnpm cache delete <pkg>` 会列出/删除三份元数据缓存（huawei / npmjs / npmmirror），
   可先用它排除缓存干扰。
+
+## 35. dsh 0.2 的 `webServer` 是晚挂载：不要在 apply 里 `ctx.get` 一次就当真（2026-10-08）
+
+**现象**：test profile 里客户端面板显示「宿主未提供配置接口（/dsh-proxy-pro/api/config）」，
+直接 `Invoke-WebRequest http://127.0.0.1:<port>/dsh-proxy-pro/api/config` → **404**
+（服务器活着，是回退处理器答的），而插件其它部分看起来正常。
+
+**根因**：dsh 0.2 里 `webServer`（`@deepseek-ai/dsh-host-webserver`）**在插件行 apply 之后才挂载**。
+我们原来的写法是 apply 里 `const webServer = ctx.get('webServer')`，拿到 `undefined` 就
+`if (webServer !== undefined)` 整块跳过——**静默、无日志**，路由永远没注册。
+
+**解法（0.2 的规范写法）**：用**作用域注入**在服务出现时再注册：
+
+```js
+if (typeof ctx.inject === 'function') {
+  ctx.inject(['webServer'], (childCtx) => { registerApi(childCtx.webServer) })
+}
+registerApi(ctx.get('webServer'))   // 旧内核：apply 时服务已在
+```
+
+- `ctx.inject([name], cb)` 在内核里到处都在用（`ctx.inject(['sessionPersistence'], …)`、
+  `ctx.inject(['settings'], …)`）；服务已存在时立即执行，后到时在执行。
+- 注册成功要打一行 info（`status API registered on …`）——这次就是靠"没有任何日志"才绕了弯路。
+- 用 `apiRegistered` 标志防止两条路径重复注册（重复 `register` 会抛）。
+- **不要**把 `webServer` 写进插件的 `inject` 顶层数组：那会让整个插件在无 web 服务的
+  composition（如纯 TUI）里永久 pending（§6 的坑）。
+
+**可复用教训**：0.2 里凡"我 apply 时它还没挂"的服务，都改用 `ctx.inject([...], cb)`；
+以及**静默跳过是最贵的失败模式**——拿不到依赖时要留日志。
