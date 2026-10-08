@@ -1189,3 +1189,29 @@ Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再�
 **护栏**：`test/manifest-compat.test.mjs` 新增
 「the client store never refreshes from inside subscribe」——静态断言 subscribe 体内无
 `refresh()`、首刷在 `useEffect`、`useCallback` 存在、`emit` 有同值短路。
+
+## 41. 版本语义与 npm 管理操作（用户定案，2026-10-08）
+
+**版本约定：插件大版本 = dsh 的代际。**
+
+| 插件 | 服务的 dsh 代际 | 说明 |
+| --- | --- | --- |
+| 1.0.x | dsh 0.1.x（`0.1.5-rc.2` 时代） | 1.0.10 是那一代的稳定版 |
+| 2.0.x | dsh 0.2.x（`0.2.0-rc.2`） | 设置模型/客户端传输全变，属于破坏性适配 |
+
+- 因此 2.x 的 `peerDependencies` **收窄**为 `">=0.2.0-rc.2 <0.3.0"`——只声明真正验证过的代际，
+  不再假装支持 0.1（代码里的 legacy `settings.register` 分支作为防御性兜底保留，但不再承诺）。
+- 1.1.0 是一次失败的中间版本（只有 peer 放宽、缺 volatile/webServer/客户端修复）：
+  **不要把它当成 2.x 的前身**，直接以 2.0.1 作为 0.2 代的首发。
+
+**npm 管理操作（deprecate / unpublish）必须在 CI 里做**：
+
+- deprecate / unpublish 都是**对 registry 的认证写操作**，本地被 SWG 挡（§32）——
+  所以用 `.github/workflows/npm-admin.yml`（`workflow_dispatch`，输入 operation/target/message/otp），
+  在云端 runner 上执行。
+- **优先 deprecate**（npm 官方建议）：版本仍可被已有 lockfile 安装，但任何人解析它都会看到警告。
+  命令：`npm deprecate '<pkg>@<ver>' '<原因>'`。
+- **unpublish 有时间窗**：npm 只允许在发布后 **72 小时内**、且**没有依赖者**时删除，且删除后
+  该版本号不可复用。仅用于"根本没人可能装过"的事故版本。
+- 两者都可能要求 2FA：granular token 通常免 OTP；若被要求，把一次性码填进 `otp` 输入，
+  或直接在 npmjs 网页（版本页 → Delete）操作。

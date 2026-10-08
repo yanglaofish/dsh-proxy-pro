@@ -1,0 +1,101 @@
+# npm admin operations: deprecate or unpublish an exact version.
+#
+# Why this runs in CI: both operations need an authenticated WRITE to
+# registry.npmjs.org, and the corporate SWG blocks every write from the local
+# machine (LESSONS §32). The cloud runner is outside that network.
+#
+# Which to use (npm's own guidance first):
+#   - `deprecate` (RECOMMENDED): keeps the version installable for lockfiles
+#     that already pin it, but prints a warning to anyone resolving it. Use it
+#     for a broken release.
+#   - `unpublish` (TIME-BOXED): npm allows removing a version within 72 hours
+#     of publishing when nothing depends on it; the name/version cannot be
+#     reused afterwards. Use it only for an accident nobody could have
+#     installed yet — and expect a refusal once the window closes.
+name: npm admin (deprecate / unpublish)
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'deprecate (recommended) or unpublish (72h window, no dependents)'
+        required: true
+        default: deprecate
+        type: choice
+        options:
+          - deprecate
+          - unpublish
+      target:
+        description: 'Exact package@version, e.g. @yanglaofish/dsh-proxy-pro@1.1.0'
+        required: true
+      message:
+        description: 'Deprecation message (deprecate only)'
+        required: false
+        default: 'broken release: lacks the dsh 0.2 settings/volatile fixes — use 2.0.1 or newer'
+      otp:
+        description: 'Optional 2FA one-time code when npm demands one'
+        required: false
+        default: ''
+
+jobs:
+  admin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Configure npm auth (repo secret NPM)
+        shell: bash
+        env:
+          NPM_TOKEN_FROM_SECRET: ${{ secrets.NPM }}
+        run: |
+          if [ -z "$NPM_TOKEN_FROM_SECRET" ]; then
+            echo "::error::the NPM repository secret is missing"
+            exit 1
+          fi
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN_FROM_SECRET}" > "$HOME/.npmrc"
+
+      - name: Run the operation
+        shell: bash
+        env:
+          OP: ${{ inputs.operation }}
+          TARGET: ${{ inputs.target }}
+          MSG: ${{ inputs.message }}
+          OTP: ${{ inputs.otp }}
+        run: |
+          set -euo pipefail
+          # Refuse anything that is not an EXACT package@version: without this
+          # guard a bare package name would reach `npm unpublish` and delete the
+          # whole package instead of one version.
+          case "$TARGET" in
+            *@[0-9]*) : ;;
+            *) echo "::error::target must be an exact package@version (got '${TARGET}')"; exit 1 ;;
+          esac
+          OTP_FLAG=""
+          [ -n "${OTP:-}" ] && OTP_FLAG="--otp=${OTP}"
+          echo "operation=${OP} target=${TARGET}"
+          case "$OP" in
+            deprecate)
+              # ${OTP_FLAG} is intentionally unquoted: empty means no flag.
+              npm deprecate "$TARGET" "$MSG" ${OTP_FLAG}
+              ;;
+            unpublish)
+              npm unpublish "$TARGET" ${OTP_FLAG}
+              ;;
+            *)
+              echo "::error::unknown operation ${OP}"; exit 1
+              ;;
+          esac
+
+      - name: Report the package's dist-tags afterwards
+        if: always()
+        shell: bash
+        env:
+          TARGET: ${{ inputs.target }}
+        run: |
+          NAME="${TARGET%@*}"
+          echo "package: ${NAME}"
+          npm view "${NAME}" dist-tags versions --json || true

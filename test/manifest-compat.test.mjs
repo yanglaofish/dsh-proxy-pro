@@ -23,8 +23,11 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const manifest = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
 const clientSource = readFileSync(path.join(root, 'lib', 'client.js'), 'utf8')
 
-/** Runtime generations this plugin supports (both settings APIs are guarded). */
-const SUPPORTED_RUNTIMES = ['0.1.5-rc.2', '0.2.0-rc.2']
+/** Runtime generations this plugin supports.
+ *  Versioning convention (user decision, 2026-10-08): the plugin's MAJOR
+ *  tracks the dsh generation — 1.x serves dsh 0.1.x, 2.x serves dsh 0.2.x —
+ *  and the peer ranges claim exactly the generation the code was verified on. */
+const SUPPORTED_RUNTIMES = ['0.2.0-rc.2']
 
 function parse(version) {
   const [core, pre = ''] = String(version).trim().split('-')
