@@ -52,8 +52,15 @@ jobs:
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js && node --check lib/proxy-core.js && node --check lib/tool-schemas.js
 
-      - name: Publish to npmjs
-        run: npm publish --registry=https://registry.npmjs.org --access=public
+      - name: Publish to npmjs (idempotent: skips an already-published version)
+        shell: bash
+        run: |
+          VER="$(node -p "require('./package.json').version")"
+          if npm view "@yanglaofish/dsh-proxy-pro@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
+            echo "version ${VER} is already on npmjs — skipping publish (re-run is a no-op, not a failure)"
+          else
+            npm publish --registry=https://registry.npmjs.org --access=public
+          fi
 
       # ONE-SHOT legacy cleanup, scoped to this tag: 1.1.0 was the failed
       # intermediate release (peer widening only — missing the dsh 0.2
