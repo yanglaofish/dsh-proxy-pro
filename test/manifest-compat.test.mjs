@@ -115,6 +115,14 @@ test('the browser half no longer requires the removed settingsScope service', ()
   assert.ok(!/ctx\.settingsScope\.bind/.test(clientSource), 'client.js must not bind a settings scope')
 })
 
+test('客户端清单只注入 DSH 0.2 实际存在的界面模块', () => {
+  assert.deepEqual(manifest.dsh.client.inject, [
+    '@deepseek-ai/dsh-client-ui-slots',
+    '@deepseek-ai/dsh-client-ui-settings',
+    '@deepseek-ai/dsh-client-ui-conversation',
+  ])
+})
+
 test('the client talks to the host config API instead of the settings transport', () => {
   assert.ok(/fetchJson\("\/config"/.test(clientSource), 'client.js must read the host /config endpoint')
   assert.ok(/createProxyStore/.test(clientSource), 'client.js must build the host-backed config store')

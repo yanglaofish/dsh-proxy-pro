@@ -27,6 +27,16 @@ import {
   systemFactsEqual,
 } from '../lib/proxy-core.js'
 
+test('状态和认证提示脱敏，但代理解析和配置编辑保留完整凭证', () => {
+  const raw = 'http://user:test-password@proxy.example:8080'
+  const config = { enabled: true, mode: 'custom', customUrl: raw, noProxy: '*.intranet.example' }
+  const effective = resolveProxyState(config)
+  assert.equal(effective.url, raw)
+  assert.equal(configPayload(config).config.customUrl, raw)
+  assert.equal(summarize({ config, effective }).url, 'http://proxy.example:8080')
+  assert.ok(!keepaliveHint('407', raw).includes('test-password'))
+})
+
 // ---- dsh 0.2 settings model (LESSONS §33/§36) ----------------------------
 
 /** Minimal stand-in for the cordis context identity used by entry-id resolution. */

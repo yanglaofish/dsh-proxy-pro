@@ -135,6 +135,13 @@ dsh-proxy-pro
 
 ## 开发
 
+本地测试使用 Node.js 24（与发布 CI 一致）。多 profile 分别运行在独立进程中，
+可以使用不同监听端口并共用同一个上游代理；每个页面只能向自己的 `host:port`
+提交插件配置。此校验不影响代理端口、内网源或 `NO_PROXY`。
+
+启动会在插件初始化完成前应用已保存的代理配置；默认关闭时不改动已有传输。
+状态、系统提示和诊断提示会隐藏代理 URL 中的认证信息，连接参数及配置编辑框仍保留完整值。
+
 ```sh
 # 语法检查
 node --check lib/index.js lib/client.js lib/proxy-core.js
@@ -142,6 +149,15 @@ node --check lib/index.js lib/client.js lib/proxy-core.js
 # 运行 26+ 条单测（node --test，零运行时依赖）
 npm test
 ```
+
+装有官方 Windows 桌面版时，可额外运行真实内核验证（替换为本机安装目录）：
+
+```powershell
+node scripts/verify-desktop-runtime.mjs 'E:\Agenttools\deepseek\app'
+```
+
+该验证在两个隔离进程内加载桌面版自带依赖，以本地测试代理检查认证、启动首请求、
+直连和关闭一方后的进程隔离，同时执行真实工具 schema 编译；不会修改已安装的 profile。
 
 - 纯逻辑层 `lib/proxy-core.js` 零 DSH 依赖，可独立单测。
 - **GitHub 安装模式**：改代码需 `git push` 后 `pnpm update @yanglaofish/dsh-proxy-pro` 再重启 `dsh web` 生效。
