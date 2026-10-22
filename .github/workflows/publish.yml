@@ -120,7 +120,7 @@ jobs:
       - name: Taobao mirror — active sync + poll dist-tags.latest
         shell: bash
         run: |
-          VER="${GITHUB_REF_NAME#v}"
+          VER="$(node -p "require('./package.json').version")"
           echo "target=$VER"
           # npmmirror's sync API takes the package name as a QUERY parameter;
           # the path form (/-/sync/@scope%2Fname) answers 404 (LESSONS §34).
