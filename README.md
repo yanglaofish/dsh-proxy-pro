@@ -13,6 +13,8 @@
 
 > 全部踩坑与设计决策见 [`docs/LESSONS.md`](docs/LESSONS.md)（必读），规格与验收清单见 [`docs/SPEC.md`](docs/SPEC.md)。
 
+`2.0.3` 修复新版 DSH 严格输出校验下 `proxy_test` 无法返回结果的问题：补齐代理与直连徽标的 Schema 声明，保留原有诊断和严格字段检查。
+
 ## 安装
 
 两种方式任选其一（npm 包已发布，拉取即用、免构建授权）：

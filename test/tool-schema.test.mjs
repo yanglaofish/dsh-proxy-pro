@@ -18,9 +18,8 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import path from 'node:path'
-import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
+import { resolveCompilerModule } from './helpers/tools-runtime.mjs'
 import {
   PROXY_CONFIG_PARAMETERS,
   PROXY_SET_PARAMETERS,
@@ -101,24 +100,11 @@ test('structural: proxy_config parameters are all optional and use a mode enum',
   assert.deepEqual(PROXY_CONFIG_PARAMETERS.mode.enum, ['system', 'custom'])
 })
 
-/** Locate the real dsh-tools module in a DSH installation. */
-function resolveCompilerModule() {
-  const candidates = [
-    process.env.DSH_TOOLS_MODULE,
-    process.env.DSH_APP_ROOT === undefined
-      ? undefined
-      : path.join(process.env.DSH_APP_ROOT, 'node_modules', '@deepseek-ai', 'dsh-tools', 'lib', 'index.js'),
-    process.env.LOCALAPPDATA === undefined
-      ? undefined
-      : path.join(process.env.LOCALAPPDATA, 'Programs', 'DSH Desktop', 'resources', 'app', 'node_modules', '@deepseek-ai', 'dsh-tools', 'lib', 'index.js'),
-  ].filter((candidate) => typeof candidate === 'string' && candidate !== '')
-  return candidates.find((candidate) => existsSync(candidate))
-}
-
 test('real compiler: every tool schema compiles exactly as defineTool would', async (t) => {
   const modulePath = resolveCompilerModule()
   if (modulePath === undefined) {
     t.diagnostic('dsh-tools not found — structural checks only (set DSH_APP_ROOT or DSH_TOOLS_MODULE to enable)')
+    t.skip('未找到真实 dsh-tools 编译器')
     return
   }
   const tools = await import(pathToFileURL(modulePath).href)

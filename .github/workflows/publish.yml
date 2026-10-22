@@ -52,7 +52,12 @@ jobs:
       - name: Syntax check
         run: node --check lib/index.js && node --check lib/client.js && node --check lib/proxy-core.js && node --check lib/tool-schemas.js
 
+      - name: 安装严格 Schema 校验测试运行时
+        run: npm install --prefix .test-runtime --no-save --package-lock=false --ignore-scripts @deepseek-ai/dsh-tools@0.2.1-rc.2 --registry=https://registry.npmjs.org
+
       - name: 运行测试
+        env:
+          DSH_TOOLS_MODULE: ${{ github.workspace }}/.test-runtime/node_modules/@deepseek-ai/dsh-tools/lib/index.js
         run: npm test
 
       - name: Publish to npmjs (idempotent — skips an already-published version)
