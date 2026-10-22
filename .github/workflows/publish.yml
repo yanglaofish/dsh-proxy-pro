@@ -25,6 +25,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     permissions:
       contents: read
       id-token: write # OIDC trusted publishing (option B) / provenance
@@ -60,14 +61,35 @@ jobs:
           DSH_TOOLS_MODULE: ${{ github.workspace }}/.test-runtime/node_modules/@deepseek-ai/dsh-tools/lib/index.js
         run: npm test
 
+      - name: 查询已有上传状态
+        id: upload_status
+        env:
+          NPM_TOKEN: ${{ secrets.NPM }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            npm whoami --registry=https://registry.npmjs.org --fetch-timeout=30000 --fetch-retries=0
+            node scripts/npm-version-status.mjs
+          fi
+
       - name: Publish to npmjs (idempotent — skips an already-published version)
+        if: steps.upload_status.outputs.accepted != 'true'
+        timeout-minutes: 3
         shell: bash
         run: |
           VER="$(node -p "require('./package.json').version")"
           if npm view "@yanglaofish/dsh-proxy-pro@${VER}" version --registry=https://registry.npmjs.org >/dev/null 2>&1; then
             echo "version ${VER} is already on npmjs — skipping publish (re-run is a no-op, not a failure)"
           else
-            npm publish --registry=https://registry.npmjs.org --access=public
+            npm publish --registry=https://registry.npmjs.org --access=public --fetch-timeout=60000 --fetch-retries=0 --loglevel=http
+          fi
+
+      - name: 核对上传处理状态
+        if: always()
+        env:
+          NPM_TOKEN: ${{ secrets.NPM }}
+        run: |
+          if [ -n "$NPM_TOKEN" ]; then
+            node scripts/npm-version-status.mjs
           fi
 
       # ONE-SHOT legacy cleanup, scoped to this tag: 1.1.0 was the failed
