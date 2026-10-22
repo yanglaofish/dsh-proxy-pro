@@ -95,6 +95,12 @@ jobs:
             node scripts/npm-version-status.mjs
           fi
 
+      - name: 只读诊断注册表连接
+        if: failure()
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_STATUS || secrets.NPM }}
+        run: node scripts/diagnose-npm-registry.mjs
+
       # ONE-SHOT legacy cleanup, scoped to this tag: 1.1.0 was the failed
       # intermediate release (peer widening only — missing the dsh 0.2
       # settings/volatile/webServer fixes). Try to remove it (npm allows

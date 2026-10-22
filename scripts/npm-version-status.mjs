@@ -2,7 +2,8 @@
 import { readFile, appendFile } from 'node:fs/promises'
 const { name, version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'))
 if (!process.env.NPM_TOKEN) throw new Error('缺少 npm 状态查询凭据')
-const response = await fetch(`https://registry.npmjs.org/-/package/${encodeURIComponent(name)}/version/${encodeURIComponent(version)}/status`, {
+const packagePath = encodeURIComponent(name).replace(/^%40/, '@')
+const response = await fetch(`https://registry.npmjs.org/-/package/${packagePath}/version/${encodeURIComponent(version)}/status`, {
   headers: { authorization: `Bearer ${process.env.NPM_TOKEN}` },
   signal: AbortSignal.timeout(30000),
 })
