@@ -14,6 +14,7 @@
 #   B) OIDC trusted publishing: npmjs package settings → "Trusted publishers"
 #      → connect yanglaofish/dsh-proxy-pro (also needs the id-token permission
 #      declared below).
+#      状态查询另需只读 NPM_STATUS 凭据；缺少时停止，避免未知上传状态下重复提交。
 name: Publish npm
 
 on:
@@ -64,11 +65,13 @@ jobs:
       - name: 查询已有上传状态
         id: upload_status
         env:
-          NPM_TOKEN: ${{ secrets.NPM }}
+          NPM_TOKEN: ${{ secrets.NPM_STATUS || secrets.NPM }}
         run: |
           if [ -n "$NPM_TOKEN" ]; then
-            npm whoami --registry=https://registry.npmjs.org --fetch-timeout=30000 --fetch-retries=0
             node scripts/npm-version-status.mjs
+          else
+            echo "::error::缺少上传状态查询凭据（NPM_STATUS 或 NPM），无法确认是否已受理，停止重复提交。"
+            exit 1
           fi
 
       - name: Publish to npmjs (idempotent — skips an already-published version)
@@ -86,7 +89,7 @@ jobs:
       - name: 核对上传处理状态
         if: always()
         env:
-          NPM_TOKEN: ${{ secrets.NPM }}
+          NPM_TOKEN: ${{ secrets.NPM_STATUS || secrets.NPM }}
         run: |
           if [ -n "$NPM_TOKEN" ]; then
             node scripts/npm-version-status.mjs
