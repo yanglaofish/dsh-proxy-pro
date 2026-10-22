@@ -10,14 +10,14 @@
 - 独立查询官方注册表与淘宝镜像，`latest` 均为 **2.0.3**。
 - 从官方注册表独立下载正式 tarball，86,303 字节；SHA-512 与注册表 `dist.integrity` 完全一致。SHA-256 为 `3766ddf42e5fdecf7fe2a77fc874a9066a2f96b0c6dd974c9ed949b0bf022849`。
 - 正式归档中的四个 `lib` 文件与 `2050964` 标签源码一致；从正式归档载入 Schema 和诊断逻辑，产生的报告通过真实 `dsh-tools@0.2.1-rc.2` 严格输出校验。结果保存在本地 `.test-runtime/published-verification.json`。
-- 镜像查询已独立确认，原续发任务的同步 HTTP 请求仍在等待时，补充连接和请求超时，避免镜像服务无响应拖住发布流程。最终流水线结果完成后补充；npm 和镜像公开可用已由独立查询确认。
+- 镜像查询已独立确认。原续发任务已完成上传，仅剩镜像请求等待时取消；随后补充请求超时并执行[最终发布核验](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/39722035963)，整个流程成功。云端再次 76/76 通过、0 跳过；上传前后状态均为 `published`，跳过重复上传，主动同步返回 HTTP 201，最终输出 `SYNCED: 2.0.3`。
 
 ## 先前阻塞记录
 
 - [首次任务](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/39710520978)通过全部测试，`npm publish` 在打印提交目标后持续约 7 分钟没有响应，已取消以获取日志；不能确认该次上传是否被接收。
 - [第二次诊断](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/39711430088)和[带超时的重试](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/39711745797)均通过全部测试，但 `npm whoami` 在 30 秒后报 `FETCH_ERROR`，认证版本状态查询也在 30 秒后超时，未再次进入上传步骤。
-- 最后查询公开注册表，`latest` 仍为 `2.0.2`，`2.0.3` 不可见。没有把源码推送或测试通过当作 npm 发布成功，也没有触发镜像同步。
-- 需要进一步核实 npm 后台的上传、安全验证或账号提示。当前证据不足以认定 Token 无效，也不足以确认上传已经被接收。
+- 当时查询公开注册表，`latest` 仍为 `2.0.2`，`2.0.3` 不可见。该阶段没有把源码推送或测试通过当作 npm 发布成功，也没有触发镜像同步。
+- 当时尚需核实 npm 后台提示，证据不足以认定 Token 无效或确认上传已受理；后续在不更换凭据的情况下恢复并完成正式发布，见上方最终结果。
 
 ## 续发
 
