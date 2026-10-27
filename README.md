@@ -13,7 +13,7 @@
 
 > 全部踩坑与设计决策见 [`docs/LESSONS.md`](docs/LESSONS.md)（必读），规格与验收清单见 [`docs/SPEC.md`](docs/SPEC.md)。
 
-`2.0.4`（待发布）让面板复用宿主 `connection.requestRejection()`，支持已声明的可信域名与
+`2.0.4` 让面板复用宿主 `connection.requestRejection()`，支持已声明的可信域名与
 反向代理，并执行宿主的 Origin、端口和凭据校验；没有 connection 时保留 loopback 同源围栏。
 验证与恢复方式见 [兼容性记录](docs/COMPATIBILITY-20261028.md)。
 
