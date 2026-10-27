@@ -1,10 +1,31 @@
-# 2.0.4 发布流程记录（2026-10-28）
+# 2.0.4 已发布（2026-10-28）
 
-分支 `codex/proxy-host-compat-2.0.4` 已完成面板准入适配、双轴 code-review 和完整回归。
-发包前公开 npm `latest` 与桌面安装均为 `2.0.3`。用户已授权推送并按既有 GitHub Actions
-流程发布 `2.0.4`；正式注册表、归档完整性及镜像核验结果将在流程结束后追加。
-验证及恢复方式见 [兼容性记录](docs/COMPATIBILITY-20261028.md)，审查见
-[发布审查记录](docs/RELEASE-REVIEW-20261028.md)。既有历史版本标签保持不变。
+分支 `codex/proxy-host-compat-2.0.4` 已完成面板准入适配、双轴 code-review、完整回归及正式发布。
+规范轴最终 0 项问题，需求轴无剩余阻断项。验证及恢复方式见
+[兼容性记录](docs/COMPATIBILITY-20261028.md)，审查见 [发布审查记录](docs/RELEASE-REVIEW-20261028.md)。
+
+## 2.0.4 最终结果
+
+- [npm 2.0.4](https://www.npmjs.com/package/@yanglaofish/dsh-proxy-pro/v/2.0.4)已公开可下载。
+  本轮独立查询确认 npm 官方及淘宝镜像 `latest` 均为 `2.0.4`。
+- 发布标签 `v2.0.4` 指向 `2621b64655084aa8d87a7bd8ab2e9e74191bb632`，既有标签未移动。
+- 官方正式归档 **88,977 字节**；SHA-512 与注册表 `dist.integrity` 完全一致；
+  lib/docs 共 9 个文件与发布标签的 Git 内容逐字节一致，清单核心字段一致。
+- 镜像归档与官方归档逐字节一致。SHA-256：
+  `ad74cc68e9378db41424467bc851409884f6dfbb8f56b18a9915cd117168d228`。
+- [首次标签任务](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/40541279181)已成功完成测试和上传，
+  但旧同步接口实际指向名为 `-` 的包，镜像轮询超时，任务最终失败。
+  后续正确触发目标包同步，并把流水线修正提交到发行分支，保留已发布标签不动。
+- [最终核验任务](https://github.com/yanglaofish/dsh-proxy-pro/actions/runs/40543821922)全部成功：
+  状态查询为 `published`，跳过重复发布，正确同步并输出 `SYNCED: 2.0.4`。
+- 完整测试 **78 项通过，0 失败、0 跳过**；两代真实桌面依赖冒烟通过。
+  后续镜像脚本 7 种边界回归、YAML/Bash 语法及补充 code-review 通过。
+- 后续 CI 修复提交 `d01e45d` 不改变正式插件归档或业务代码。
+- 本地证据在 `E:/Agenttools/deepseek/logs/formal-releases-20261028/proxy-pro-2.0.4/`。
+  downloads 中安装包已替换为正式归档，旧候选包保留在 backups/release-candidates-20261028/。
+
+本轮没有更新实际桌面安装、重启应用或评论/关闭线上 issue。
+本机仍安装正式 `2.0.3`；凭据签名使用固定值夹具，未执行完整浏览器 UI 手动验收。
 
 ## 2.0.3 已发布（2026-10-22）
 
