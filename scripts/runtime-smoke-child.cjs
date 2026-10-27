@@ -23,6 +23,15 @@ const plugin = require('../lib/index.js')
 const schemas = require('../lib/tool-schemas.js')
 const compiler = runtimeRequire('@deepseek-ai/dsh-tools')
 const { fetch: runtimeFetch } = runtimeRequire('undici')
+const { Context } = runtimeRequire('@deepseek-ai/cordis')
+const { HostConnectionService } = runtimeRequire('@deepseek-ai/dsh-client-connection')
+const admissionContext = new Context()
+admissionContext.provide('webServer', { host: '192.168.51.116', protocol: 'http:' })
+let authenticated = true
+// 凭据签名验证以固定值代替，准入逻辑使用真实宿主实现。
+const connection = new HostConnectionService(admissionContext, ['dsh.example.com:3003'], {
+  isAuthenticated: () => authenticated, authenticateApi: () => undefined,
+})
 for (const schema of [schemas.PROXY_SET_PARAMETERS, schemas.PROXY_CONFIG_PARAMETERS, schemas.PROXY_TEST_PARAMETERS]) {
   compiler.parameterSchemaSpecToJsonSchema(schema)
 }
@@ -31,11 +40,12 @@ for (const schema of [schemas.PROXY_STATUS_SCHEMA, schemas.PROXY_TEST_SCHEMA]) {
 }
 const config = { enabled: true, mode: 'custom', customUrl: `http://${label}:smoke-password@127.0.0.1:${proxyPort}`,
   noProxy: 'localhost,127.0.0.1,::1', systemPollMs: 0 }
-const tools = new Map(), effects = []
+const tools = new Map(), effects = [], routes = []
+const webServer = { register(route) { routes.push(route); return () => {} } }
 const settings = { update: async (_id, patch) => { Object.assign(config, patch) } }
 const ctx = {
   fiber: { entry: { options: { id: 'dsh-proxy-pro' } } },
-  get: (name) => name === 'settings' ? settings : undefined,
+  get: (name) => ({ settings, connection, webServer })[name],
   on() {}, emit() {}, logger: { warn: console.error, info() {} },
   effect: (setup) => effects.push(setup()),
   tools: { register: (tool) => tools.set(tool.name, tool) },
@@ -51,6 +61,24 @@ async function probe() {
   const direct = await runtimeFetch(`http://127.0.0.1:${directPort}/check`, { signal: AbortSignal.timeout(5000) })
     .catch((error) => { throw new Error(`${label} 直连请求失败：${error.message}`) })
   assert.equal(await direct.text(), 'direct')
+}
+async function probePanel() {
+  async function request(headers, expected) {
+    let status
+    await routes[0].handler({ method: 'GET', url: '/dsh-proxy-pro/api/config', headers }, {
+      writeHead(code) { status = code }, end() {},
+    })
+    assert.equal(status, expected, JSON.stringify(headers))
+  }
+  const remote = { host: 'dsh.example.com:3003', origin: 'https://dsh.example.com:3003' }
+  await request(remote, 200)
+  await request({ host: 'dsh.example.com:3004' }, 403)
+  await request({ ...remote, 'sec-fetch-site': 'cross-site' }, 403)
+  await request({ ...remote, origin: 'https://evil.example' }, 403)
+  authenticated = false
+  await request(remote, 401)
+  await request({ host: 'localhost:3080' }, 401)
+  authenticated = true
 }
 process.on('message', async (message) => {
   try {
@@ -76,6 +104,7 @@ process.on('message', async (message) => {
   assert.equal(runtimeRequire('@deepseek-ai/dsh-http-proxy').proxyRouteFor(new URL('http://proxy-smoke.invalid/check')).proxied, true)
   // 不先查状态：首个真实请求就必须已经走代理。
   await probe()
+  await probePanel()
   const status = await tools.get('proxy_status').execute({})
   assert.ok(!JSON.stringify(status).includes('smoke-password'))
   process.send({ event: 'ready' })

@@ -95,7 +95,7 @@ try {
   const exits = children.map((child) => once(child, 'exit'))
   for (const child of children) child.send('quit')
   for (const [code] of await Promise.all(exits)) assert.equal(code, 0)
-  console.log('PASS：真实 DSH 编译器；启动首请求经认证代理；本地直连；双进程共用代理；关闭 A 不影响 B；状态脱敏。')
+  console.log('PASS：真实 DSH 编译器与 connection；面板可信域名与凭据校验；启动首请求经认证代理；本地直连；双进程共用代理；关闭 A 不影响 B；状态脱敏。')
 } catch (error) {
   console.error('已记录的测试代理连接：', events)
   throw error

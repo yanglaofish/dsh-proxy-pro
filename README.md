@@ -13,7 +13,12 @@
 
 > 全部踩坑与设计决策见 [`docs/LESSONS.md`](docs/LESSONS.md)（必读），规格与验收清单见 [`docs/SPEC.md`](docs/SPEC.md)。
 
-`2.0.3` 修复新版 DSH 严格输出校验下 `proxy_test` 无法返回结果的问题：补齐代理与直连徽标的 Schema 声明，保留原有诊断和严格字段检查。
+`2.0.4`（待发布）让面板复用宿主 `connection.requestRejection()`，支持已声明的可信域名与
+反向代理，并执行宿主的 Origin、端口和凭据校验；没有 connection 时保留 loopback 同源围栏。
+验证与恢复方式见 [兼容性记录](docs/COMPATIBILITY-20261028.md)。
+
+`2.0.3` 已修复 [issue #2](https://github.com/yanglaofish/dsh-proxy-pro/issues/2) 中
+`proxy_test` 无法返回结果的问题：补齐代理与直连徽标的 Schema 声明，保留原有诊断和严格字段检查。
 
 ## 安装
 
