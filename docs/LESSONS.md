@@ -796,8 +796,8 @@ API 端点就这样被误判。**404 从来不是「网络不可达」的证据*
 
 **标准流程（每一步都要做）**：
 1. `npm publish --access=public --registry=https://registry.npmjs.org --replace-registry-host=never` 成功；
-2. 循环最多 60 轮：`PUT https://registry.npmmirror.com/-/package/@yanglaofish%2Fdsh-proxy-pro/syncs`
-   带 body `{"version":"<新版本>"}`（ContentType application/json），随后
+2. 循环最多 60 轮：`PUT https://registry.npmmirror.com/@yanglaofish%2Fdsh-proxy-pro/sync`
+   带 body `{}`（ContentType application/json），随后
    `GET https://registry.npmmirror.com/@yanglaofish%2Fdsh-proxy-pro` 看 `dist-tags.latest`；
    每轮间隔 8-10s，**一直循环到 latest == 新版本**（不许提前放弃）；
 3. latest 到位后立即：`dsh plugin --profile test add '@yanglaofish/dsh-proxy-pro@^<新版本>'`
@@ -997,7 +997,8 @@ PowerShell 读不到；用 asar 头解析脚本（`_asar_probe.mjs` / `_asar_gre
 
 **淘宝主动同步（铁律 §28 的正确端点）**：
 
-- ✅ 可用：`PUT https://registry.npmmirror.com/-/sync?name=%40scope%2Fname` → `201 {"ok":true,…}`
+- ✅ 当前可用（2026-10-28 更正）：`PUT https://registry.npmmirror.com/@scope%2Fname/sync`。
+- ⚠️ 旧 `/-/sync?name=…` 即使返回 201，任务日志也可能显示在同步名为 `-` 的包，不能再使用。
 - ❌ 旧写法失效：`PUT https://registry.npmmirror.com/-/sync/@scope%2fname` → **404**；
   `https://npmmirror.com/sync/@scope/name` → 405。workflow 里的同步步骤已按此改正
   （此前 `|| true` 吞掉了 404，实际靠 npmmirror 懒同步兜底，属于"看起来同步了"的假象）。
@@ -1232,7 +1233,8 @@ Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再�
 1. **发包**：本地直连 `npm publish --registry=https://registry.npmjs.org` → 返回
    "Your package is being processed"（staged），**约 2 分钟后**才在 registry 可见——别以为失败，
    要轮询 `dist-tags`/`versions` 确认。
-2. **淘宝同步**：手动 `PUT https://registry.npmmirror.com/-/sync?name=%40scope%2Fname` → 201。
+2. **淘宝同步**：手动 `PUT https://registry.npmmirror.com/@scope%2Fname/sync`，核对任务日志中的目标包名，
+   再核对镜像上的版本和归档（2026-10-28 更正）。
 3. **deprecate**：本地可做；**unpublish 不行**——免 2FA 的 granular token 被 npm 拒绝
    （`Granular access tokens that bypass two-factor authentication may not perform this action`），
    删除只能走网页 2FA 或带 OTP 的会话。
@@ -1249,3 +1251,18 @@ Config schema / Slots 契约）→ 再动手。**先查再写，不要先写再�
 - `_core_probe/scan-workflows.mjs`——现成捕获"未加引号的 `: ` 值"这类会让 GitHub
   **在零 job 层面拒掉整个 workflow 文件**的错误（现象：出现以文件名为名的失败 run）。
 - 读文件一律用 `read` 工具或 Node `readFileSync(..., 'utf8')`；`Get-Content` 的显示不等于文件内容。
+
+## 43. 镜像任务必须核对包名，HTTP 201 不能证明目标正确（2026-10-28）
+
+本轮发布 2.0.4 时，旧 `PUT /-/sync?name=@scope%2Fname` 返回了 201，但读取任务日志发现
+它同步的是名为 `-` 的包。此前 §34 把状态码当作端点正确的证据，结论已按本轮实测更正。
+
+使用 `PUT /@scope%2Fname/sync`。端点改动或人工排查时，读取返回的 `logId` 对应
+`GET /@scope%2Fname/sync/log/:logId`，核对日志中的目标完整包名。
+这是 [cnpmcore 官方文档](https://github.com/cnpm/cnpmcore/blob/master/docs/internal-api.md#package-sync-api)
+声明的兼容接口。自动流水线每轮主动触发并核对目标元数据；人工发布核验另下载正式归档，
+校验其完整性和源码一致性，不能仅凭队列状态结束。
+
+本轮还把 skill-manager 手动工作流的目标版本改为从 package.json 读取，避免把分支名当版本。
+已经发布到 npm 的版本与标签保持不动；§32 中重打标签的旧操作只适用于尚未发布的错误标签。
+后续流水线修复提交到发行分支，通过 workflow_dispatch 核验，幂等跳过已经存在的版本。

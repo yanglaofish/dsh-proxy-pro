@@ -131,13 +131,14 @@ jobs:
         run: |
           VER="$(node -p "require('./package.json').version")"
           echo "target=$VER"
-          # npmmirror's sync API takes the package name as a QUERY parameter;
-          # the path form (/-/sync/@scope%2Fname) answers 404 (LESSONS §34).
-          curl --connect-timeout 10 --max-time 20 -sS -X PUT "https://registry.npmmirror.com/-/sync?name=%40yanglaofish%2Fdsh-proxy-pro" -o /tmp/sync.json -w 'sync trigger http=%{http_code}\n' || true
-          cat /tmp/sync.json 2>/dev/null || true
+          # 包名必须位于 /:fullname/sync 路径；旧查询参数接口会误同步名为 "-" 的包。
+          ENC='@yanglaofish%2Fdsh-proxy-pro'
           for i in $(seq 1 30); do
-            LATEST=$(curl --connect-timeout 10 --max-time 15 -sS "https://registry.npmmirror.com/@yanglaofish%2Fdsh-proxy-pro" \
-              | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{console.log(JSON.parse(d)['dist-tags']?.latest||'')}catch{console.log('')}})" 2>/dev/null || echo '')
+            curl --connect-timeout 10 --max-time 20 -sS -X PUT "https://registry.npmmirror.com/${ENC}/sync" \
+              -H 'content-type: application/json' -d '{}' -o /tmp/sync.json -w 'sync trigger http=%{http_code}\n' || true
+            cat /tmp/sync.json 2>/dev/null || true
+            LATEST=$(curl --connect-timeout 10 --max-time 15 -sS "https://registry.npmmirror.com/${ENC}?release-check=${GITHUB_RUN_ID:-local}-${i}" \
+              | TARGET_VERSION="$VER" node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{try{const j=JSON.parse(d);console.log(j.versions?.[process.env.TARGET_VERSION]?j['dist-tags']?.latest||'':'')}catch{console.log('')}})" 2>/dev/null || echo '')
             echo "poll $i: tb latest=$LATEST"
             [ "$LATEST" = "$VER" ] && { echo "SYNCED: $LATEST"; exit 0; }
             sleep 10
